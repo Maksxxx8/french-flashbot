@@ -27,7 +27,7 @@ class GeneratedWordItem(BaseModel):
     transcription: str
     example_sentence: str
     example_translation: str
-    conjugations: Optional[str] = None
+    conjugations: Optional[str]
 
 
 class NewWordsBatchSchema(BaseModel):
