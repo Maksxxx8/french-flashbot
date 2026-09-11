@@ -111,7 +111,21 @@ async def ping_user(bot, chat_id, lang, exercise_type, exercise_data):
         await handle_new_exercise(bot, chat_id, exercise)
 
 
+last_audio_messages = {}
+
 async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3'):
+    global last_audio_messages
+    # Удаляем предыдущее отправленное аудиосообщение, чтобы Telegram не связывал их в плейлист
+    if chat_id in last_audio_messages:
+        old_msg_id = last_audio_messages[chat_id]
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{bot.token}/deleteMessage",
+                data={'chat_id': str(chat_id), 'message_id': old_msg_id}
+            )
+        except Exception:
+            pass
+
     with open(audio_file_path, 'rb') as audio_file:
         payload = {
             'chat_id': str(chat_id),
@@ -126,7 +140,10 @@ async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3'):
             f"https://api.telegram.org/bot{bot.token}/sendAudio",
             data=payload,
             files=files)
-        resp.json()
+        res_json = resp.json()
+        if res_json.get('ok'):
+            last_audio_messages[chat_id] = res_json['result']['message_id']
+
 
 async def tel_send_image(bot, chat_id, image_file_path, caption):
     with open(image_file_path, 'rb') as img_file:
