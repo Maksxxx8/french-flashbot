@@ -76,9 +76,8 @@ async def handle_new_exercise(bot, chat_id, exercise):
 
             message = f'{due_message}{message}'
 
-            buttons = None
             if isinstance(exercise, WordsExerciseLearn):
-                buttons = ['Next', 'Pronounce']
+                buttons = ['Next']
             elif isinstance(exercise, WordsExerciseTest):
                 buttons = ['Easier', 'Harder', 'Hint', 'Correct answer', 'Answer audio']
             elif isinstance(exercise, FlashcardExercise):
@@ -87,7 +86,36 @@ async def handle_new_exercise(bot, chat_id, exercise):
             message = f'{interface["Error"][uilang]}: {e}'
             buttons = None
 
-        await tel_send_message(bot, chat_id, message, buttons=buttons)
+        if isinstance(exercise, WordsExerciseLearn):
+            # 1. Отправляем текст карточки
+            await tel_send_message(bot, chat_id, message, buttons=None)
+
+            # 2. Сразу отправляем голосовое сообщение с кнопкой 'Next'
+            pre_audio = getattr(exercise, 'audio_path', None)
+            audio_sent = False
+            if pre_audio and os.path.exists(pre_audio):
+                try:
+                    await tel_send_audio(bot, chat_id, pre_audio, as_voice=True, buttons=['Next'])
+                    audio_sent = True
+                except Exception as e:
+                    print(f'Error sending cached voice: {e}')
+
+            if not audio_sent:
+                file_path = f'{chat_id}_{exercise.uid}.mp3'
+                try:
+                    await get_audio(exercise.word, exercise.lang, file_path)
+                    await tel_send_audio(bot, chat_id, file_path, as_voice=True, buttons=['Next'])
+                    audio_sent = True
+                except Exception as e:
+                    print(f'Error generating/sending voice: {e}')
+                finally:
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+
+            if not audio_sent:
+                await tel_send_message(bot, chat_id, "👉", buttons=['Next'])
+        else:
+            await tel_send_message(bot, chat_id, message, buttons=buttons)
     except Exception as e:
         if chat_id in running_activities.chat_ids: running_activities.pop_all(chat_id)
         release_all_locks()
@@ -112,32 +140,50 @@ async def ping_user(bot, chat_id, lang, exercise_type, exercise_data):
         await handle_new_exercise(bot, chat_id, exercise)
 
 
-async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3', as_voice=True):
+async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3', as_voice=True, buttons=None):
+    uilang = lang_map.get(bot.token, 'russian')
+    payload = {
+        'chat_id': str(chat_id)
+    }
+    if buttons is not None:
+        buttons_list = []
+        for button_text in buttons:
+            buttons_list.append(
+                {
+                    "text": interface[button_text][uilang] if button_text in interface.keys() else button_text,
+                    "callback_data": button_text
+                }
+            )
+        reply_markup = {
+            "inline_keyboard": [[b] for b in buttons_list]
+        }
+        payload['reply_markup'] = json.dumps(reply_markup)
+
     with open(audio_file_path, 'rb') as audio_file:
         if as_voice:
-            payload = {
-                'chat_id': str(chat_id)
-            }
             files = {
                 'voice': (title, audio_file.read(), 'audio/mpeg')
             }
-            requests.post(
+            resp = requests.post(
                 f"https://api.telegram.org/bot{bot.token}/sendVoice",
                 data=payload,
                 files=files)
+            if not resp.ok:
+                print(f'sendVoice error: {resp.status_code} {resp.text}')
+                raise RuntimeError(f'sendVoice failed: {resp.text}')
         else:
-            payload = {
-                'chat_id': str(chat_id),
-                'title': title,
-                'parse_mode': 'HTML'
-            }
+            payload['title'] = title
+            payload['parse_mode'] = 'HTML'
             files = {
                 'audio': audio_file.read(),
             }
-            requests.post(
+            resp = requests.post(
                 f"https://api.telegram.org/bot{bot.token}/sendAudio",
                 data=payload,
                 files=files)
+            if not resp.ok:
+                print(f'sendAudio error: {resp.status_code} {resp.text}')
+                raise RuntimeError(f'sendAudio failed: {resp.text}')
 
 
 
