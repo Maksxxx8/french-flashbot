@@ -111,38 +111,33 @@ async def ping_user(bot, chat_id, lang, exercise_type, exercise_data):
         await handle_new_exercise(bot, chat_id, exercise)
 
 
-last_audio_messages = {}
-
-async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3'):
-    global last_audio_messages
-    # Удаляем предыдущее отправленное аудиосообщение, чтобы Telegram не связывал их в плейлист
-    if chat_id in last_audio_messages:
-        old_msg_id = last_audio_messages[chat_id]
-        try:
-            requests.post(
-                f"https://api.telegram.org/bot{bot.token}/deleteMessage",
-                data={'chat_id': str(chat_id), 'message_id': old_msg_id}
-            )
-        except Exception:
-            pass
-
+async def tel_send_audio(bot, chat_id, audio_file_path, title='audio.mp3', as_voice=True):
     with open(audio_file_path, 'rb') as audio_file:
-        payload = {
-            'chat_id': str(chat_id),
-            'title': title,
-            'parse_mode': 'HTML'
-        }
-        files = {
-            'audio': audio_file.read(),
-        }
+        if as_voice:
+            payload = {
+                'chat_id': str(chat_id)
+            }
+            files = {
+                'voice': (title, audio_file.read(), 'audio/mpeg')
+            }
+            requests.post(
+                f"https://api.telegram.org/bot{bot.token}/sendVoice",
+                data=payload,
+                files=files)
+        else:
+            payload = {
+                'chat_id': str(chat_id),
+                'title': title,
+                'parse_mode': 'HTML'
+            }
+            files = {
+                'audio': audio_file.read(),
+            }
+            requests.post(
+                f"https://api.telegram.org/bot{bot.token}/sendAudio",
+                data=payload,
+                files=files)
 
-        resp = requests.post(
-            f"https://api.telegram.org/bot{bot.token}/sendAudio",
-            data=payload,
-            files=files)
-        res_json = resp.json()
-        if res_json.get('ok'):
-            last_audio_messages[chat_id] = res_json['result']['message_id']
 
 
 async def tel_send_image(bot, chat_id, image_file_path, caption):
@@ -285,8 +280,9 @@ async def handle_next_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # await tel_send_message(bot, chat_id, mes)
             await tel_send_image(bot, chat_id, song_data['img_path'], exercise.word)
             await tel_send_message(bot, chat_id, lyrics)
-            await tel_send_audio(bot, chat_id, song_data['audio_data'][0]['audio_file_path'], title=song_data['title'] + ' (1)')
-            await tel_send_audio(bot, chat_id, song_data['audio_data'][1]['audio_file_path'], title=song_data['title'] + ' (2)')
+            await tel_send_audio(bot, chat_id, song_data['audio_data'][0]['audio_file_path'], title=song_data['title'] + ' (1)', as_voice=False)
+            await tel_send_audio(bot, chat_id, song_data['audio_data'][1]['audio_file_path'], title=song_data['title'] + ' (2)', as_voice=False)
+
 
 
 async def handle_exercise_button_press(update, context, chat_id, lang, udata, exercise):
