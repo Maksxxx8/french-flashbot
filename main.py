@@ -78,13 +78,11 @@ async def handle_new_exercise(bot, chat_id, exercise):
 
             buttons = None
             if isinstance(exercise, WordsExerciseLearn):
-                # buttons = ['Next', 'Discard', 'I know this word', 'Pronounce']
-                buttons = ['Next', 'Discard', 'Pronounce']
+                buttons = ['Next', 'Pronounce']
             elif isinstance(exercise, WordsExerciseTest):
                 buttons = ['Easier', 'Harder', 'Hint', 'Correct answer', 'Answer audio']
             elif isinstance(exercise, FlashcardExercise):
-                # buttons = ['Discard', 'I know this word', 'Correct answer']
-                buttons = ['Discard', 'Correct answer']
+                buttons = ['Correct answer']
         except Exception as e:
             message = f'{interface["Error"][uilang]}: {e}'
             buttons = None
@@ -105,8 +103,11 @@ async def ping_user(bot, chat_id, lang, exercise_type, exercise_data):
         raise ValueError(f'Unknown exercise type {exercise_type}')
 
     if exercise is None:
-        await tel_send_message(bot, chat_id, interface['Could not create an exercise, will try again later'][uilang])
-        print(f'Could not create an exercise {exercise_type} for data {exercise_data}.')
+        if exercise_data in ['test', 'test_flashcard', 'test_translation']:
+            print(f'No words due for review for {chat_id} at this time. Skipping ping.')
+        else:
+            await tel_send_message(bot, chat_id, interface['Could not create an exercise, will try again later'][uilang])
+            print(f'Could not create an exercise {exercise_type} for data {exercise_data}.')
     else:
         await handle_new_exercise(bot, chat_id, exercise)
 
@@ -232,6 +233,10 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
     await tel_send_message(bot, chat_id, welcome_msg)
 
+    # Проверяем и запускаем фоновую предгенерацию буфера слов
+    lang = user_data.get('language', 'french')
+    asyncio.create_task(lp.ensure_word_buffer(chat_id, lang))
+
 
 async def handle_add_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
@@ -250,8 +255,8 @@ async def handle_next_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
     exercise = await lp.get_next_words_exercise(chat_id, lang, mode='test')
     if exercise is None:
-        await tel_send_message(bot, chat_id, interface['Could not create an exercise, please try again later'][uilang])
-        print(f'Could not create an exercise "words" for data "test".')
+        await tel_send_message(bot, chat_id, "🎉 *Все запланированные слова на сегодня уже повторены!*\n\nКаждое слово повторяется не чаще 1 раза в день. Следующие повторения откроются завтра по алгоритму интервальных повторений.\n\nЧтобы учить новые слова, отправьте команду /next_new")
+        print(f'All words due for today are already reviewed for {chat_id}.')
     else:
         await handle_new_exercise(bot, chat_id, exercise)
 
@@ -262,7 +267,9 @@ async def handle_next_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uilang = lang_map[bot.token]
     lang = user_config.get_user_data(chat_id)['language']
 
-    await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
+    # Если буфер пуст — предупреждаем о генерации, иначе карточка откроется мгновенно!
+    if lp.get_unseen_count(chat_id, lang) == 0:
+        await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
     exercise = await lp.get_next_words_exercise(chat_id, lang, mode='learn')
     if exercise is None:
         await tel_send_message(bot, chat_id, interface['Could not create an exercise, please try again later'][uilang])
@@ -293,16 +300,7 @@ async def handle_exercise_button_press(update, context, chat_id, lang, udata, ex
         bot = context._application.bot
 
         if isinstance(exercise, WordsExerciseLearn) or isinstance(exercise, WordsExerciseTest) or isinstance(exercise, FlashcardExercise):
-            if f'Discard' == udata:
-                words_progress_db.ignore_word(chat_id, exercise.word_id)
-                words_progress_db.save_progress()
-
-                message_template = templates.get_template(uilang, lang, 'word_ignore_message')
-                template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-                mes = template.render(word=exercise.word)
-                await tel_send_message(bot, chat_id, mes)
-
-            elif f'Hint' == udata:
+            if f'Hint' == udata:
 
                 running_exercise = running_activities.pop_activity(chat_id)
                 running_exercise.hint_clicked = True
@@ -349,20 +347,32 @@ async def handle_exercise_button_press(update, context, chat_id, lang, udata, ex
             elif f'Answer audio' == udata:
                 file_path = f'{chat_id}_{exercise.uid}.mp3'
                 await get_audio(exercise.correct_answer(), exercise.lang, file_path)
-                await tel_send_audio(bot, chat_id, file_path)
-                os.remove(file_path)
+                await tel_send_audio(bot, chat_id, file_path, as_voice=True)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
             elif f'Pronounce' == udata:
-                file_path = f'{chat_id}_{exercise.uid}.mp3'
-                await get_audio(exercise.word, exercise.lang, file_path)
-                await tel_send_audio(bot, chat_id, file_path)
-                os.remove(file_path)
+                pre_audio = getattr(exercise, 'audio_path', None)
+                if pre_audio and os.path.exists(pre_audio):
+                    await tel_send_audio(bot, chat_id, pre_audio, as_voice=True)
+                else:
+                    file_path = f'{chat_id}_{exercise.uid}.mp3'
+                    await get_audio(exercise.word, exercise.lang, file_path)
+                    await tel_send_audio(bot, chat_id, file_path, as_voice=True)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
             elif f'Next' == udata:
-                await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
                 mode = 'learn' if isinstance(exercise, WordsExerciseLearn) else 'test'
+                if mode == 'learn' and lp.get_unseen_count(chat_id, lang) == 0:
+                    await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
+                elif mode != 'learn':
+                    await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
                 exercise = await lp.get_next_words_exercise(chat_id, lang, mode)
                 if exercise is None:
-                    await tel_send_message(bot, chat_id, interface['Could not create an exercise, please try again later'][uilang])
-                    print(f'Could not create an exercise "words" for data "{mode}".')
+                    if mode == 'test':
+                        await tel_send_message(bot, chat_id, "🎉 *Все запланированные слова на сегодня уже повторены!*\n\nКаждое слово повторяется не чаще 1 раза в день. Следующие повторения откроются завтра.\n\nЧтобы учить новые слова, нажмите /next_new.")
+                    else:
+                        await tel_send_message(bot, chat_id, "Все слова в текущем наборе пройдены. Генерирую новые слова, попробуйте через минуту /next_new.")
+                    print(f'All words due for today are already reviewed or no more words for "{mode}".')
                 else:
                     await handle_new_exercise(bot, chat_id, exercise)
             elif f'Easier' == udata:
@@ -474,13 +484,11 @@ async def handle_request(update, context):
                 
                 buttons = None
                 if isinstance(exercise, WordsExerciseLearn):
-                    # buttons = ['Discard', 'I know this word']
-                    buttons = ['Discard']
+                    buttons = None
                 elif isinstance(exercise, WordsExerciseTest) or isinstance(exercise, FlashcardExercise):
                     lp.process_response(chat_id, exercise, quality=quality)
                     words_progress_db.save_progress()
-                    # buttons = ['Discard', 'I know this word', 'Next']
-                    buttons = ['Discard', 'Next']
+                    buttons = ['Next']
 
                 await tel_send_message(bot, chat_id, message, buttons=buttons)
                 words_progress_db.save_progress()
@@ -638,8 +646,7 @@ if __name__ == '__main__':
     shared_objs = [user_config, words_db, words_progress_db, decks_db, running_activities]
 
     # list of known exercise buttons
-    # exercise_buttons = ['Discard', 'Hint', 'Correct answer', 'I know this word', 'Answer audio', 'Next', 'Pronounce', 'Easier', 'Harder']
-    exercise_buttons = ['Discard', 'Hint', 'Correct answer', 'Answer audio', 'Next', 'Pronounce', 'Easier', 'Harder']
+    exercise_buttons = ['Hint', 'Correct answer', 'Answer audio', 'Next', 'Pronounce', 'Easier', 'Harder']
 
     apps = []
     lang_map = {}

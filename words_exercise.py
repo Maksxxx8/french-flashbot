@@ -4,6 +4,7 @@ import random
 import re
 from typing import List, Optional
 import jinja2
+import pandas as pd
 from utils import get_assistant_response
 
 from pydantic import BaseModel, Field, ValidationError
@@ -75,7 +76,10 @@ class FlashcardCorrectionSchema(BaseModel):
 
 
 class WordsExerciseLearn(Exercise):
-    def __init__(self, word, meaning, word_id, lang, uilang, num_reps, interface, templates, level='A1'):
+    def __init__(self, word, word_id, lang, uilang, interface, templates,
+                 meaning=None, translation=None, transcription=None,
+                 example_sentence=None, example_translation=None, conjugations=None,
+                 audio_path=None, num_reps=0, level='A1'):
         super().__init__()
         self.word = word
         self.meaning = meaning
@@ -85,6 +89,12 @@ class WordsExerciseLearn(Exercise):
         self.level = level
         self.interface = interface
         self.templates = templates
+        self.translation = translation
+        self.transcription = transcription
+        self.example_sentence = example_sentence
+        self.example_translation = example_translation
+        self.conjugations = conjugations
+        self.audio_path = audio_path
         self.num_reps = num_reps + 1 if not math.isnan(num_reps) else 1
         self.model_base = os.getenv('MODEL_BASE', 'gemini-3.6-flash')
         self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
@@ -92,15 +102,38 @@ class WordsExerciseLearn(Exercise):
         self.is_responded = True
 
     async def get_next_user_message(self, user_response: Optional[str]) -> tuple[str, int]:
-        message_template = self.templates.get_template(self.uilang, self.lang, 'learn_word_query')
+        message_template = self.templates.get_template(self.uilang, self.lang, 'learn_word_user_message')
         template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
+
+        # Если данные карточки уже предгенерированы — отдаём моментально!
+        has_trans = self.translation and not pd.isna(self.translation)
+        has_ex = self.example_sentence and not pd.isna(self.example_sentence)
+        if has_trans and has_ex:
+            ex_trans = str(self.example_translation) if self.example_translation and not pd.isna(self.example_translation) else ''
+            example_list = [ExampleSentenceSchema(
+                example_sentence=str(self.example_sentence),
+                sentence_translation=ex_trans,
+                pronunciation=None
+            )]
+            pron = str(self.transcription).strip().strip('[]') if self.transcription and not pd.isna(self.transcription) else None
+            conj = str(self.conjugations) if self.conjugations and not pd.isna(self.conjugations) else None
+            message = template.render(
+                word=self.word,
+                examples=example_list,
+                conjugations=conj,
+                pronunciation=pron,
+                translation=str(self.translation)
+            )
+            return message, None
+
+        # Fallback на генерацию через Gemini, если карточка не была предгенерирована:
+        query_template = self.templates.get_template(self.uilang, self.lang, 'learn_word_query')
+        q_temp = jinja2.Template(query_template, undefined=jinja2.StrictUndefined)
         word_phrase = "word" if len(self.word.split()) == 1 else "phrase"
         lang_tr = self.interface[self.lang][self.uilang]
-        query = template.render(word_phrase=word_phrase, word=self.word, meaning=self.meaning, lang=lang_tr, level=self.level)
-
+        query = q_temp.render(word_phrase=word_phrase, word=self.word, meaning=self.meaning, lang=lang_tr, level=self.level)
 
         schema = WordExamplesSchema.model_json_schema()
-
         response_format = {
             "type": "json_schema",
             "json_schema": {"strict": True,
@@ -112,13 +145,12 @@ class WordsExerciseLearn(Exercise):
         assistant_response = await get_assistant_response(self.interface, query, uilang=self.uilang, model_base=self.model_base,
                                                           model_substitute=self.model_substitute, response_format=response_format, validation_cls=WordExamplesSchema)
         
-        message_template = self.templates.get_template(self.uilang, self.lang, 'learn_word_user_message')
-        template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
         message = template.render(word=self.word, examples=assistant_response.example_list,
                                   conjugations=assistant_response.conjugations,
                                   pronunciation=assistant_response.pronunciation,
                                   translation=assistant_response.translation)
         return message, None
+
 
 
 class WordsExerciseTest(Exercise):
