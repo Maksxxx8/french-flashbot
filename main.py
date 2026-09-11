@@ -261,7 +261,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user_data = user_config.get_user_data(chat_id)
 
     welcome_msg = (
-        f"🇫🇷 *Bonjour !* Я бот для изучения французского языка для поездки в Париж (уровень A1 → B1).\n\n"
+        f"🇫🇷 *Bonjour !* Я бот для изучения французского языка для поездки в Париж (уровень A1 → A2).\n\n"
         f"Твой Chat ID: `{chat_id}` (настройки активированы!)\n\n"
         f"📌 *Команды:*\n"
         f"/next_new — Учить новое слово (с артиклем, транскрипцией и примером)\n"
@@ -269,7 +269,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"/add_word — Добавить слово вручную\n\n"
         f"Нажми /next_new чтобы начать!"
     ) if uilang == 'russian' else (
-        f"🇫🇷 *Bonjour!* I am your French vocabulary bot for your trip to Paris (A1 → B1).\n\n"
+        f"🇫🇷 *Bonjour!* I am your French vocabulary bot for your trip to Paris (A1 → A2).\n\n"
         f"Your Chat ID: `{chat_id}`\n\n"
         f"Commands:\n"
         f"/next_new — Next new word\n"

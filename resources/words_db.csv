@@ -1,7 +1,14 @@
-id,word,lang,tags,meaning
-0,le ticket de métro,french,,
-1,l'addition,french,,
-2,où se trouve... ?,french,,
-3,la clé,french,,
-4,combien ça coûte ?,french,,
-5,le passeport,french,,
+id,word,lang,tags,meaning,translation,transcription,example_sentence,example_translation,conjugations,audio_path
+0,le ticket de métro,french,,,,,,,,
+1,l'addition,french,,,,,,,,
+2,où se trouve... ?,french,,,,,,,,
+3,la clé,french,,,,,,,,
+4,combien ça coûte ?,french,,,,,,,,
+5,le passeport,french,,,,,,,,
+6,le métro,french,,,метро,[lə mɛ.tʁo],Où est la station de métro la plus proche ?,Где находится ближайшая станция метро?,,resources/audio/le_m_tro_1789153062045.mp3
+7,la réservation,french,,,бронирование,[la ʁe.zɛʁ.va.sjɔ̃],J'ai une réservation au nom de Ivanov.,У меня бронирование на имя Иванов.,,resources/audio/la_r_servation_1789153063648.mp3
+8,combien coûte... ?,french,,,сколько стоит...?,[kɔ̃.bjɛ̃ kut],"Pardon, combien coûte cette carte postale ?","Извините, сколько стоит эта открытка?",,resources/audio/combien_co_te______1789153064940.mp3
+9,s'il vous plaît,french,,,пожалуйста,[sil vu plɛ],"Un café et un croissant, s'il vous plaît.","Кофе и круассан, пожалуйста.",,resources/audio/s_il_vous_pla_t_1789153066486.mp3
+10,la valise,french,,,чемодан,[la va.liz],Ma valise est très lourde.,Мой чемодан очень тяжёлый.,,resources/audio/la_valise_1789153067118.mp3
+11,commander,french,,,заказывать,[kɔ.mɑ̃.de],Je voudrais commander un plat du jour.,Я хотел бы заказать блюдо дня.,"je commande, tu commandes, il/elle commande, nous commandons, vous commandez, ils/elles commandent",resources/audio/commander_1789153067828.mp3
+12,le ticket,french,,,билет,[lə ti.kɛ],Il me faut un ticket pour le bus.,Мне нужен билет на автобус.,,resources/audio/le_ticket_1789153068494.mp3

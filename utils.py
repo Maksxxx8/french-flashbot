@@ -99,7 +99,23 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
     gen_config_kwargs = {'max_output_tokens': 4096}
     if validation_cls is not None:
         gen_config_kwargs['response_mime_type'] = 'application/json'
-        gen_config_kwargs['response_schema'] = validation_cls
+        try:
+            from google.generativeai.types import content_types, generation_types
+            from google.ai import generativelanguage as protos
+
+            def _clean_schema_dict(d):
+                if isinstance(d, dict):
+                    return {k: _clean_schema_dict(v) for k, v in d.items() if k != 'default'}
+                elif isinstance(d, list):
+                    return [_clean_schema_dict(v) for v in d]
+                return d
+
+            raw_schema = content_types._schema_for_class(validation_cls)
+            cleaned_schema = _clean_schema_dict(raw_schema)
+            renamed = generation_types._rename_schema_fields(cleaned_schema)
+            gen_config_kwargs['response_schema'] = protos.Schema(renamed)
+        except Exception:
+            gen_config_kwargs['response_schema'] = validation_cls
 
     while nattempts < max_attempts:
         nattempts += 1
