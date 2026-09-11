@@ -1,0 +1,13 @@
+🔍 **Учим слово:** _{{word}}_ {% if pronunciation %}[{{pronunciation}}]{% endif %}
+
+{% if translation %}📖 **Перевод:** *{{translation}}*
+{% endif %}
+📚 **Примеры использования:**
+{% for entry in examples %}
+- _{{entry.example_sentence}}_ — {{entry.sentence_translation}} {% if entry.pronunciation %}({{entry.pronunciation}}){% endif %}
+{% endfor %}
+
+{% if conjugations %}
+🔄 **Склонения в настоящем времени:**
+{{conjugations}}
+{% endif %}

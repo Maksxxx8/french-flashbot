@@ -1,0 +1,62 @@
+{
+  "default": {
+    "language": "french",
+    "ui_language": "russian",
+    "timezone": "Europe/Moscow",
+    "level": "A1",
+    "max_tokens": 800,
+    "show_words_due": true,
+    "n_flashcards": 5,
+    "exercise_types": [
+      "words"
+    ],
+    "schedule": {
+      "words": {
+        "weekday": {
+          "09:00": "learn",
+          "12:00": "test",
+          "15:00": "learn",
+          "19:00": "test",
+          "21:00": "test_translation"
+        },
+        "weekend": {
+          "10:00": "learn",
+          "13:00": "test",
+          "16:00": "learn",
+          "20:00": "test",
+          "22:00": "test_translation"
+        }
+      }
+    }
+  },
+  "465607143": {
+    "language": "french",
+    "ui_language": "russian",
+    "timezone": "Europe/Moscow",
+    "level": "A1",
+    "max_tokens": 800,
+    "show_words_due": true,
+    "n_flashcards": 5,
+    "exercise_types": [
+      "words"
+    ],
+    "schedule": {
+      "words": {
+        "weekday": {
+          "09:00": "learn",
+          "12:00": "test",
+          "15:00": "learn",
+          "19:00": "test",
+          "21:00": "test_translation"
+        },
+        "weekend": {
+          "10:00": "learn",
+          "13:00": "test",
+          "16:00": "learn",
+          "20:00": "test",
+          "22:00": "test_translation"
+        }
+      }
+    }
+  }
+}

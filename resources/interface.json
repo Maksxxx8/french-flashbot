@@ -1,0 +1,148 @@
+{
+  "Discard": {
+    "russian": "Забыть",
+    "english": "Discard"
+  },
+  "Hint": {
+    "russian": "Подсказка",
+    "english": "Hint"
+  },
+  "Correct answer": {
+    "russian": "Правильный ответ",
+    "english": "Correct answer"
+  },
+  "I know this word": {
+    "russian": "Уже знаю это слово",
+    "english": "I know this word"
+  },
+  "Answer audio": {
+    "russian": "Аудио ответа",
+    "english": "Answer audio"
+  },
+  "Next": {
+    "russian": "Еще",
+    "english": "Next"
+  },
+  "Pronounce": {
+    "english": "Pronounce",
+    "russian": "Произнеси"
+  },
+  "All words in the deck are already learned, repeating already learned words": {
+    "russian": "Все слова в наборе уже выучены, повторяем уже выученные слова",
+    "english": "All words in the deck are already learned, repeating already learned words"
+  },
+  "Could not create an exercise, will try again later": {
+    "russian": "Не смог создать упражнение, попробую позже",
+    "english": "Could not create an exercise, will try again later"
+  },
+  "Thinking": {
+    "russian": "Думаю",
+    "english": "Thinking"
+  },
+  "Could not create an exercise, please try again later": {
+    "russian": "Не смог создать упражнение, пожалуйста попробуйте позже",
+    "english": "Could not create an exercise, please try again later"
+  },
+  "Type the word that you would like to add": {
+    "russian": "Отправьте мне слово которое вы хотите добавить",
+    "english": "Type the word that you would like to add"
+  },
+  "You can only add words to the decks that you created": {
+    "russian": "Слова можно добавлять только в те наборы которые вы создали сами",
+    "english": "You can only add words to the decks that you created"
+  },
+  "Create a new deck by typing its name or select an existing deck": {
+    "russian": "Выберите существующий набор или создайте новый напечетав и отправив его имя",
+    "english": "Create a new deck by typing its name or select an existing deck"
+  },
+  "Create a new deck by typing its name": {
+    "russian": "Создайте новый набор напечетав и отправив его имя",
+    "english": "Create a new deck by typing its name"
+  },
+  "Sorry, the exercise has been completed or is expired": {
+    "russian": "Извините, упражнение было выполнено или истек его срок действия",
+    "english": "Sorry, the exercise has been completed or is expired"
+  },
+  "No exercises or commands are running, this message will be ignored": {
+    "russian": "Нет текущих упражнений или команд, это сообщение будет проигнорировано",
+    "english": "No exercises or commands are running, this message will be ignored"
+  },
+  "The command has already been processed": {
+    "russian": "Эта команда уже была обработана",
+    "english": "The command has already been processed"
+  },
+  "Song of the day": {
+    "russian": "Песня дня",
+    "english": "Song of the day"
+  },
+  "Something went terribly wrong, please try again or notify the admin": {
+    "russian": "Что-то пошло не так, пожалуйста уведомити админа",
+    "english": "Something went terribly wrong, please try again or notify the admin"
+  },
+  "You are a great language teacher": {
+    "russian": "Ты отличный преподаватель по языкам",
+    "english": "You are a great language teacher"
+  },
+  "italian": {
+    "russian": "итальянский",
+    "english": "italian"
+  },
+  "uzbek": {
+    "russian": "узбекский",
+    "english": "uzbek"
+  },
+  "spanish": {
+    "russian": "испанский",
+    "english": "spanish"
+  },
+  "japanese": {
+    "russian": "японский",
+    "english": "japanese"
+  },
+  "russian": {
+    "russian": "русский",
+    "english": "russian"
+  },
+  "Selected deck": {
+    "russian": "Выбранный набор",
+    "english": "Selected deck"
+  },
+  "No test exercises are running, this message will be ignored":
+  {
+    "russian": "Нет текущих тестовых упражнений, это сообщение будет проигнорировано",
+    "english": "No test exercises are running, this message will be ignored"
+  },
+  "Error":
+  {
+    "russian": "Ошибка",
+    "english": "Error"
+  },
+  "The exercise has already been answered, this message will be ignored":
+  {
+    "russian": "Вы уже ответили на это упражнение, это сообщение будет проигнорировано",
+    "english": "The exercise has already been answered, this message will be ignored"
+  },
+  "Example":
+  {
+    "russian": "Пример",
+    "english": "Example"
+  },
+  "Easier":
+  {
+    "russian": "Легче",
+    "english": "Easier"
+  },
+  "Harder":
+  {
+    "russian": "Сложнее",
+    "english": "Harder"
+  },
+  "french": {
+    "russian": "французский",
+    "english": "french"
+  },
+  "Слов выучено сегодня": {
+    "russian": "Слов выучено сегодня",
+    "english": "Words learned today"
+  }
+}

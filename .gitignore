@@ -1,0 +1,12 @@
+run_en.sh
+api_keys
+personal_files
+venv/
+.env
+__pycache__/
+*.pyc
+.DS_Store
+resources/words_progress_db.csv
+resources/words_db.csv
+resources/decks_db.csv
+resources/deck_word.csv
