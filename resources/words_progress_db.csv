@@ -1,0 +1,3 @@
+chat_id,word_id,num_reps,e_factor,last_interval,last_review_date,next_review_date,to_ignore
+465607143,1,0.0,2.5,0,2026-09-11 15:53:02.500988,2026-09-12,False
+465607143,3,0.0,2.5,0,2026-09-11 15:57:12.013918,2026-09-12,False

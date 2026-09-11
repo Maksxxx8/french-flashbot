@@ -6,7 +6,3 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
-resources/words_progress_db.csv
-resources/words_db.csv
-resources/decks_db.csv
-resources/deck_word.csv
