@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import time
 import warnings
 import requests
@@ -22,9 +23,65 @@ EDGE_TTS_VOICES = {
 }
 
 
+def parse_json_safely(content: str, validation_cls=None):
+    """
+    Безопасно парсит JSON от LLM и валидирует через Pydantic.
+    Устойчив к неэкранированным символам перевода строки внутри значений,
+    управляющим символам ASCII (\u0000-\u001F) и маркдаун-обёрткам.
+    """
+    text = content.strip()
+    if text.startswith('```'):
+        lines = text.splitlines()
+        if lines[0].startswith('```'):
+            lines = lines[1:]
+        if lines and lines[-1].startswith('```'):
+            lines = lines[:-1]
+        text = '\n'.join(lines).strip()
+
+    # Поиск первой и последней фигурной/квадратной скобки
+    match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
+    candidate = match.group(0) if match else text
+
+    # Первая попытка: стандартный json.loads с strict=False (разрешает control characters в строках)
+    try:
+        data = json.loads(candidate, strict=False)
+    except Exception:
+        # Вторая попытка: очистка от непечатных управляющих символов и экранирование переносов внутри кавычек
+        sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', candidate)
+
+        def escape_newlines_in_strings(s: str) -> str:
+            in_string = False
+            escaped = False
+            result = []
+            for ch in s:
+                if ch == '"' and not escaped:
+                    in_string = not in_string
+                    result.append(ch)
+                elif in_string and ch == '\n':
+                    result.append('\\n')
+                elif in_string and ch == '\r':
+                    result.append('\\r')
+                elif in_string and ch == '\t':
+                    result.append('\\t')
+                else:
+                    result.append(ch)
+                if ch == '\\' and not escaped:
+                    escaped = True
+                else:
+                    escaped = False
+            return ''.join(result)
+
+        sanitized = escape_newlines_in_strings(sanitized)
+        data = json.loads(sanitized, strict=False)
+
+    if validation_cls is not None:
+        return validation_cls.model_validate(data)
+    return data
+
+
 async def get_assistant_response(interface, query, uilang, model_base, model_substitute,
                                   response_format=None, validation_cls=None):
-    """Отправляет запрос в Gemini API и возвращает ответ."""
+    """Отправляет запрос в Gemini API и возвращает ответ с автоматическим повтором при ошибках."""
 
     api_key = os.getenv('GEMINI_API_KEY')
     if api_key is None:
@@ -36,10 +93,10 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
     model_name = model_base or os.getenv('MODEL_BASE', 'gemini-3.6-flash')
     max_attempts = 3
     nattempts = 0
-    response = None
+    last_error = None
 
-    # Настройка генерации — структурированный JSON если передана схема
-    gen_config_kwargs = {'max_output_tokens': 1000}
+    # Увеличен лимит токенов до 4096, чтобы исключить обрезку JSON (EOF while parsing)
+    gen_config_kwargs = {'max_output_tokens': 4096}
     if validation_cls is not None:
         gen_config_kwargs['response_mime_type'] = 'application/json'
         gen_config_kwargs['response_schema'] = validation_cls
@@ -52,38 +109,30 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
                 system_instruction=system_prompt,
             )
             generation_config = genai.GenerationConfig(**gen_config_kwargs)
-            print(f'Отправляю запрос в Gemini ({model_name})...')
+            print(f'Отправляю запрос в Gemini ({model_name}, попытка {nattempts})...')
             response = await asyncio.to_thread(
                 model.generate_content,
                 query,
                 generation_config=generation_config,
             )
-            break
+
+            content = response.text.strip()
+            if validation_cls is not None:
+                validated_resp = parse_json_safely(content, validation_cls)
+            else:
+                validated_resp = content
+
+            print('Готово.')
+            return validated_resp
         except Exception as e:
-            print(f'Ошибка Gemini (попытка {nattempts}): {e}')
-            await asyncio.sleep(nattempts * 2)
-            if nattempts == max_attempts - 1:
-                model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+            last_error = e
+            print(f'Ошибка обработки ответа Gemini (попытка {nattempts}): {e}')
+            if nattempts < max_attempts:
+                await asyncio.sleep(nattempts * 2)
+                if nattempts == max_attempts - 1:
+                    model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
 
-    if response is None:
-        raise ValueError('Модель не смогла ответить после нескольких попыток.')
-
-    print('Готово.')
-    content = response.text.strip()
-    if content.startswith('```'):
-        lines = content.splitlines()
-        if lines[0].startswith('```'):
-            lines = lines[1:]
-        if lines and lines[-1].startswith('```'):
-            lines = lines[:-1]
-        content = '\n'.join(lines).strip()
-
-    if validation_cls is not None:
-        validated_resp = validation_cls.model_validate_json(content)
-    else:
-        validated_resp = content
-
-    return validated_resp
+    raise ValueError(f'Модель не смогла дать валидный ответ после {max_attempts} попыток. Последняя ошибка: {last_error}')
 
 
 
