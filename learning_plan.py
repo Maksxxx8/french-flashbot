@@ -397,8 +397,8 @@ class LearningPlan:
         template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
         query = template.render(lang=lang, user_words_str=user_words_str)
 
-        model_base = os.getenv('MODEL_BASE', 'gemini-3.6-flash')
-        model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+        model_base = os.getenv('MODEL_BASE', 'gemini-3.5-flash-lite')
+        model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
         validation_cls = NewWordsBatchSchema
         schema = validation_cls.model_json_schema()

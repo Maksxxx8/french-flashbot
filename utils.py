@@ -136,7 +136,7 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
     genai.configure(api_key=api_key)
 
     system_prompt = interface["You are a great language teacher"][uilang]
-    model_name = model_base or os.getenv('MODEL_BASE', 'gemini-3.6-flash')
+    model_name = model_base or os.getenv('MODEL_BASE', 'gemini-3.5-flash-lite')
     max_attempts = 4
     nattempts = 0
     last_error = None
@@ -213,7 +213,7 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
             if nattempts < max_attempts:
                 await asyncio.sleep(nattempts * 2)
                 if nattempts >= 2:
-                    model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+                    model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
     raise ValueError(f'Модель не смогла дать валидный ответ после {max_attempts} попыток. Последняя ошибка: {last_error}')
 

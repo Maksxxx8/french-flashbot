@@ -96,8 +96,8 @@ class WordsExerciseLearn(Exercise):
         self.conjugations = conjugations
         self.audio_path = audio_path
         self.num_reps = num_reps + 1 if not math.isnan(num_reps) else 1
-        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.6-flash')
-        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.5-flash-lite')
+        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
         self.is_responded = True
 
@@ -173,8 +173,8 @@ class WordsExerciseTest(Exercise):
         self.assistant_responses = []
         self.user_messages = []
         self.next_query_idx = 0
-        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.6-flash')
-        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.5-flash-lite')
+        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
     def correct_answer(self):
         idx = max(0, min(len(self.assistant_responses[0]) - 1, self.difficulty - 1))
@@ -295,8 +295,8 @@ class FlashcardExercise(Exercise):
         self.assistant_responses = []
         self.user_messages = []
         self.next_query_idx = 0
-        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.6-flash')
-        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
+        self.model_base = os.getenv('MODEL_BASE', 'gemini-3.5-flash-lite')
+        self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
     def correct_answer(self):
         return f'{self.word}\n\n{self.interface["Example"][self.uilang]}: {self.assistant_responses[0]["example"]}'
