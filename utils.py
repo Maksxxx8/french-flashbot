@@ -151,25 +151,8 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
         'max_output_tokens': 4096,
         'temperature': 0.7,
     }
-    if validation_cls is not None:
+    if validation_cls is not None or response_format is not None:
         gen_config_kwargs['response_mime_type'] = 'application/json'
-        try:
-            from google.generativeai.types import content_types, generation_types
-            from google.ai import generativelanguage as protos
-
-            def _clean_schema_dict(d):
-                if isinstance(d, dict):
-                    return {k: _clean_schema_dict(v) for k, v in d.items() if k != 'default'}
-                elif isinstance(d, list):
-                    return [_clean_schema_dict(v) for v in d]
-                return d
-
-            raw_schema = content_types._schema_for_class(validation_cls)
-            cleaned_schema = _clean_schema_dict(raw_schema)
-            renamed = generation_types._rename_schema_fields(cleaned_schema)
-            gen_config_kwargs['response_schema'] = protos.Schema(renamed)
-        except Exception:
-            gen_config_kwargs['response_schema'] = validation_cls
 
     while nattempts < max_attempts:
         nattempts += 1
@@ -177,9 +160,6 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
             # На повторных попытках повышаем температуру для максимальной вариативности
             if nattempts > 1:
                 gen_config_kwargs['temperature'] = min(1.0, 0.7 + (nattempts - 1) * 0.12)
-                # Если строгая protobuf response_schema вызывает сбои у данной модели, на повторе используем чистый JSON MIME-тип
-                if 'response_schema' in gen_config_kwargs:
-                    del gen_config_kwargs['response_schema']
 
             model = genai.GenerativeModel(
                 model_name=model_name,

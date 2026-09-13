@@ -10,7 +10,7 @@ from typing import Dict, List, Optional
 import jinja2
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from exercise import Exercise
 from item import Item
@@ -19,23 +19,21 @@ from words_exercise import FlashcardExercise, WordsExerciseLearn, WordsExerciseT
 
 
 class GeneratedWordItem(BaseModel):
-    class Config:
-        extra = 'forbid'
+    model_config = ConfigDict(extra='ignore')
 
     word: str
     translation: str
-    transcription: str
+    transcription: Optional[str] = None
     example_sentence: str
     example_translation: str
-    conjugations: Optional[str]
+    conjugations: Optional[str] = None
 
 
 class NewWordsBatchSchema(BaseModel):
-    class Config:
-        extra = 'forbid'
+    model_config = ConfigDict(extra='ignore')
 
-    deck_theme: str
-    words: list[GeneratedWordItem]
+    deck_theme: str = ""
+    words: list[GeneratedWordItem] = Field(default_factory=list)
 
 
 class LearningPlan:

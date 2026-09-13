@@ -7,72 +7,64 @@ import jinja2
 import pandas as pd
 from utils import get_assistant_response
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, ConfigDict
 
 from exercise import Exercise
 
 
 class ExampleTestSentenceSchema(BaseModel):
-    class Config:
-        extra = 'forbid'
+    model_config = ConfigDict(extra='ignore')
 
     example_sentence: str
     sentence_translation: str
-    difficulty: int
+    difficulty: int = 1
 
 
 class ExampleSentenceSchema(BaseModel):
-    class Config:
-        extra = 'forbid'
+    model_config = ConfigDict(extra='ignore')
 
     example_sentence: str
     sentence_translation: str
-    pronunciation: Optional[str]
+    pronunciation: Optional[str] = None
 
 
 class WordTestSchema(BaseModel):
-    example_list: list[ExampleTestSentenceSchema]
+    model_config = ConfigDict(extra='ignore')
 
-    class Config:
-        extra = 'forbid'
+    example_list: list[ExampleTestSentenceSchema] = Field(default_factory=list)
 
 
 class WordExamplesSchema(BaseModel):
-    example_list: list[ExampleSentenceSchema]
-    pronunciation: Optional[str]   # IPA-транскрипция слова
-    translation: Optional[str]     # Перевод слова на русский (для французского)
-    conjugations: Optional[str]
+    model_config = ConfigDict(extra='ignore')
 
-    class Config:
-        extra = 'forbid'
+    example_list: list[ExampleSentenceSchema] = Field(default_factory=list)
+    pronunciation: Optional[str] = None   # IPA-транскрипция слова
+    translation: Optional[str] = None     # Перевод слова на русский (для французского)
+    conjugations: Optional[str] = None
 
 
 class ResponseCorrectionSchema(BaseModel):
-    translation_score: int
-    score_justification: str
-    mistakes_explanation: Optional[str]
-    corrected_translation: str
+    model_config = ConfigDict(extra='ignore')
 
-    class Config:
-        extra = 'forbid'
+    translation_score: int = 3
+    score_justification: str = ""
+    mistakes_explanation: Optional[str] = None
+    corrected_translation: str = ""
 
 
 class FlashCardExampleSchema(BaseModel):
-    example: str = Field(..., description="Example sentence")
-    translation_of_example: str = Field(..., description="Translate the example sentence")
-    translation_of_word: str= Field(..., description="Translate the word itself")
+    model_config = ConfigDict(extra='ignore')
 
-
-    class Config:
-        extra = 'forbid'
+    example: str = Field("", description="Example sentence")
+    translation_of_example: str = Field("", description="Translate the example sentence")
+    translation_of_word: str = Field("", description="Translate the word itself")
 
 
 class FlashcardCorrectionSchema(BaseModel):
-    translation_score: int
-    score_justification: str
+    model_config = ConfigDict(extra='ignore')
 
-    class Config:
-        extra = 'forbid'
+    translation_score: int = 3
+    score_justification: str = ""
 
 
 class WordsExerciseLearn(Exercise):
@@ -131,7 +123,8 @@ class WordsExerciseLearn(Exercise):
         q_temp = jinja2.Template(query_template, undefined=jinja2.StrictUndefined)
         word_phrase = "word" if len(self.word.split()) == 1 else "phrase"
         lang_tr = self.interface[self.lang][self.uilang]
-        query = q_temp.render(word_phrase=word_phrase, word=self.word, meaning=self.meaning, lang=lang_tr, level=self.level)
+        meaning = self.meaning if self.meaning and not (isinstance(self.meaning, float) and math.isnan(self.meaning)) else None
+        query = q_temp.render(word_phrase=word_phrase, word=self.word, meaning=meaning, lang=lang_tr, level=self.level)
 
         schema = WordExamplesSchema.model_json_schema()
         response_format = {
