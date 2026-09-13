@@ -29,7 +29,10 @@ def parse_json_safely(content: str, validation_cls=None):
     Устойчив к неэкранированным кавычкам, переводам строк внутри значений,
     незакрытым скобкам (truncated JSON) и маркдаун-обёрткам.
     """
-    text = content.strip()
+    if not content or not str(content).strip():
+        raise ValueError("Пустой ответ от модели (empty content).")
+
+    text = str(content).strip()
     if text.startswith('```'):
         lines = text.splitlines()
         if lines[0].startswith('```'):
@@ -43,7 +46,9 @@ def parse_json_safely(content: str, validation_cls=None):
 
     # Поиск первой и последней фигурной/квадратной скобки
     match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
-    candidate = match.group(0) if match else text
+    if not match:
+        raise ValueError(f"В ответе модели не найден JSON-объект. Получено: {repr(text[:150])}")
+    candidate = match.group(0)
 
     # Попытка 1: стандартный json.loads с strict=False
     try:
@@ -172,6 +177,9 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
             # На повторных попытках повышаем температуру для максимальной вариативности
             if nattempts > 1:
                 gen_config_kwargs['temperature'] = min(1.0, 0.7 + (nattempts - 1) * 0.12)
+                # Если строгая protobuf response_schema вызывает сбои у данной модели, на повторе используем чистый JSON MIME-тип
+                if 'response_schema' in gen_config_kwargs:
+                    del gen_config_kwargs['response_schema']
 
             model = genai.GenerativeModel(
                 model_name=model_name,
@@ -185,20 +193,31 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
                 generation_config=generation_config,
             )
 
-            # Безопасное извлечение текста ответа без исключения finish_reason=4
+            # Безопасное извлечение текста ответа
             content = None
+            finish_reason = None
             if hasattr(response, 'candidates') and response.candidates:
                 candidate = response.candidates[0]
                 finish_reason = getattr(candidate, 'finish_reason', None)
                 if finish_reason == 4:
                     raise ValueError("Сработал фильтр цитирования RECITATION. Повышаем вариативность и повторяем...")
+                if finish_reason == 3:
+                    raise ValueError("Сработал фильтр безопасности (SAFETY).")
+                if finish_reason == 2:
+                    raise ValueError("Достигнут лимит токенов (MAX_TOKENS).")
                 if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
                     parts_text = [p.text for p in candidate.content.parts if hasattr(p, 'text') and p.text]
                     if parts_text:
                         content = "".join(parts_text).strip()
 
             if not content:
-                content = response.text.strip()
+                try:
+                    content = response.text.strip()
+                except Exception:
+                    pass
+
+            if not content or not str(content).strip():
+                raise ValueError(f"Модель {model_name} вернула пустой ответ (finish_reason={finish_reason}).")
 
             if validation_cls is not None:
                 validated_resp = parse_json_safely(content, validation_cls)
@@ -211,9 +230,12 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
             last_error = e
             print(f'Ошибка обработки ответа Gemini (попытка {nattempts}): {e}')
             if nattempts < max_attempts:
-                await asyncio.sleep(nattempts * 2)
-                if nattempts >= 2:
+                await asyncio.sleep(nattempts * 1.5)
+                if nattempts == 2:
                     model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
+                elif nattempts >= 3:
+                    # Гарантированный надежный откат к gemini-3.6-flash
+                    model_name = 'gemini-3.6-flash'
 
     raise ValueError(f'Модель не смогла дать валидный ответ после {max_attempts} попыток. Последняя ошибка: {last_error}')
 
