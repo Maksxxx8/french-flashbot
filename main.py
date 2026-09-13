@@ -253,6 +253,8 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_notifications_off(update, context)
         elif command in ['notifications_on', 'subscribe']:
             await handle_notifications_on(update, context)
+        elif command in ['reset', 'reset_progress']:
+            await handle_reset(update, context)
     except Exception as e:
         if chat_id in running_activities.chat_ids: running_activities.pop_all(chat_id)
         release_all_locks()
@@ -317,6 +319,7 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"• /add_word — Добавить свое слово для изучения (введите слово после команды).\n"
         f"• /stop (или /notifications_off) — Отключить авторассылку по расписанию.\n"
         f"• /notifications_on (или /subscribe) — Включить напоминания по расписанию (09:00, 12:00, 15:00, 19:00, 21:00).\n"
+        f"• /reset — Сбросить прогресс изученных слов (начать заново с чистого листа).\n"
         f"• /help — Открыть это руководство.\n\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"🔘 *КНОПКИ В УПРАЖНЕНИЯХ:*\n\n"
@@ -388,6 +391,27 @@ async def handle_notifications_on(update: Update, context: ContextTypes.DEFAULT_
         "🔔 *Notifications enabled!*\n\n"
         "You will receive reminders 5 times a day according to schedule.\n\n"
         "To disable, send /stop or /notifications_off."
+    )
+    await tel_send_message(bot, chat_id, msg)
+
+
+async def handle_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    uilang = lang_map[bot.token]
+
+    words_progress_db.reset_user_progress(chat_id)
+    if chat_id in running_activities.chat_ids:
+        running_activities.pop_all(chat_id)
+
+    msg = (
+        "🔄 *Ваш прогресс изучения слов успешно сброшен!*\n\n"
+        "Бот забыл все пройденные слова и повторения для вашего аккаунта.\n\n"
+        "Вы можете начать изучение заново с чистого листа:\n"
+        "Нажмите /next_new, чтобы получить первое слово!"
+    ) if uilang == 'russian' else (
+        "🔄 *Your vocabulary progress has been reset!*\n\n"
+        "All learned words have been cleared. Press /next_new to start fresh!"
     )
     await tel_send_message(bot, chat_id, msg)
 
@@ -748,6 +772,7 @@ async def run_apps(apps):
                 BotCommand("help", "Справка по командам и кнопкам"),
                 BotCommand("stop", "Отключить уведомления"),
                 BotCommand("notifications_on", "Включить уведомления (5/день)"),
+                BotCommand("reset", "Сбросить прогресс и начать заново"),
                 BotCommand("add_word", "Добавить слово вручную"),
             ])
         except Exception as e:
@@ -830,6 +855,8 @@ if __name__ == '__main__':
         application.add_handler(CommandHandler("unsubscribe", handle_command))
         application.add_handler(CommandHandler("notifications_on", handle_command))
         application.add_handler(CommandHandler("subscribe", handle_command))
+        application.add_handler(CommandHandler("reset", handle_command))
+        application.add_handler(CommandHandler("reset_progress", handle_command))
         application.add_handler(CallbackQueryHandler(handle_inline_request))
 
         job_queue = application.job_queue

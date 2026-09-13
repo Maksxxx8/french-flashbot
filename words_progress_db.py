@@ -93,6 +93,14 @@ class WordsProgressDB:
         self.progress_df = self.progress_df[~mask]
         self._lock.release()
 
+    def reset_user_progress(self, chat_id):
+        self._lock.acquire()
+        try:
+            self.progress_df = self.progress_df[self.progress_df['chat_id'] != int(chat_id)]
+            self.progress_df.to_csv(self.db_path, index=False)
+        finally:
+            self._lock.release()
+
     def release_lock(self):
         if self._lock.locked():
             self._lock.release()
