@@ -154,7 +154,7 @@ class WordsExerciseLearn(Exercise):
 
 
 class WordsExerciseTest(Exercise):
-    def __init__(self, word, word_id, lang, uilang, level, interface, templates):
+    def __init__(self, word, word_id, lang, uilang, level, interface, templates, known_words=None):
         super().__init__()
         self.word = word
         self.word_id = word_id
@@ -163,11 +163,12 @@ class WordsExerciseTest(Exercise):
         self.level = level
         self.interface = interface
         self.templates = templates
+        self.known_words = known_words or []
         self.n_examples = 1
         self.hint_clicked = False
         self.correct_answer_clicked = False
         self.is_responded = False
-        self.difficulty = 3
+        self.difficulty = 2
 
         self.assistant_responses = []
         self.user_messages = []
@@ -176,10 +177,12 @@ class WordsExerciseTest(Exercise):
         self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
 
     def correct_answer(self):
-        return self.assistant_responses[0][self.difficulty - 1]['answer']
+        idx = max(0, min(len(self.assistant_responses[0]) - 1, self.difficulty - 1))
+        return self.assistant_responses[0][idx]['answer']
     
     def test_sentence(self):
-        return self.assistant_responses[0][self.difficulty - 1]['test']
+        idx = max(0, min(len(self.assistant_responses[0]) - 1, self.difficulty - 1))
+        return self.assistant_responses[0][idx]['test']
 
     async def get_next_user_message(self, user_response: Optional[str]):
         lang_tr = self.interface[self.lang][self.uilang]
@@ -188,7 +191,9 @@ class WordsExerciseTest(Exercise):
 
             message_template = self.templates.get_template(self.uilang, self.lang, 'test_word_query_1')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            query = template.render(word=self.word, lang=lang_tr, level=self.level)
+            known_list = [w for w in (self.known_words or []) if w != self.word]
+            known_words_str = ", ".join(known_list[:25]) if known_list else ""
+            query = template.render(word=self.word, lang=lang_tr, level=self.level, known_words_str=known_words_str)
 
             validation_cls = WordTestSchema
             schema = validation_cls.model_json_schema()
@@ -208,7 +213,7 @@ class WordsExerciseTest(Exercise):
             examples = sorted(assistant_response.example_list, key=lambda x: x.difficulty)
             examples = [dict(test=item.sentence_translation, answer=item.example_sentence) for item in examples]
 
-            self.difficulty = 3
+            self.difficulty = 2
 
             self.assistant_responses.append(examples)
 
@@ -268,7 +273,8 @@ class WordsExerciseTest(Exercise):
 
 
 class FlashcardExercise(Exercise):
-    def __init__(self, word, word_id, lang, uilang, level, interface, templates):
+    def __init__(self, word, word_id, lang, uilang, level, interface, templates,
+                 translation=None, example_sentence=None, example_translation=None, known_words=None):
         super().__init__()
         self.word = word
         self.word_id = word_id
@@ -277,6 +283,10 @@ class FlashcardExercise(Exercise):
         self.level = level
         self.interface = interface
         self.templates = templates
+        self.translation = translation
+        self.example_sentence = example_sentence
+        self.example_translation = example_translation
+        self.known_words = known_words or []
         self.n_examples = 1
         self.hint_clicked = False
         self.correct_answer_clicked = False
@@ -294,32 +304,43 @@ class FlashcardExercise(Exercise):
     async def get_next_user_message(self, user_response: Optional[str]):
         lang_tr = self.interface[self.lang][self.uilang]
         if user_response is None:
-            # first message to the user
-            message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_query_1')
-            template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            query = template.render(word=self.word, level=self.level, lang=lang_tr, lang_ui=self.uilang)
+            # Если перевод и пример уже есть в базе данных — используем их напрямую без LLM!
+            has_data = (self.translation and not pd.isna(self.translation) and
+                        self.example_sentence and not pd.isna(self.example_sentence) and
+                        self.example_translation and not pd.isna(self.example_translation))
+            if has_data:
+                self.assistant_responses.append(dict(
+                    example=str(self.example_sentence),
+                    translation_example=str(self.example_translation),
+                    translation_word=str(self.translation)
+                ))
+            else:
+                # first message to the user
+                message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_query_1')
+                template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
+                query = template.render(word=self.word, level=self.level, lang=lang_tr, lang_ui=self.uilang)
 
-            validation_cls = FlashCardExampleSchema
-            schema = validation_cls.model_json_schema()
+                validation_cls = FlashCardExampleSchema
+                schema = validation_cls.model_json_schema()
 
-            response_format = {
-                "type": "json_schema",
-                "json_schema": {"strict": True,
-                                "name": "word_example",
-                                "schema": schema
-                                }
-            }
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {"strict": True,
+                                    "name": "word_example",
+                                    "schema": schema
+                                    }
+                }
 
-            assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
-                                                        model_substitute=self.model_substitute, uilang=self.uilang,
-                                                        response_format=response_format, validation_cls=validation_cls)
-            
-            self.assistant_responses.append(dict(example=assistant_response.example, translation_example=assistant_response.translation_of_example,
-                                                 translation_word=assistant_response.translation_of_word))
+                assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
+                                                            model_substitute=self.model_substitute, uilang=self.uilang,
+                                                            response_format=response_format, validation_cls=validation_cls)
+                
+                self.assistant_responses.append(dict(example=assistant_response.example, translation_example=assistant_response.translation_of_example,
+                                                     translation_word=assistant_response.translation_of_word))
 
             message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_user_message_1')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            message = template.render(lang=lang_tr, lang_ui=self.uilang, word=assistant_response.translation_of_word, example=assistant_response.translation_of_example)
+            message = template.render(lang=lang_tr, lang_ui=self.uilang, word=self.assistant_responses[0]['translation_word'], example=self.assistant_responses[0]['translation_example'])
             quality = None
             
         else:

@@ -10,7 +10,7 @@ import jinja2
 from flask import Flask
 import requests
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 import telegramify_markdown
 
@@ -235,18 +235,24 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot = context._application.bot
     uilang = lang_map[bot.token]
     raw_cmd = update.message.text[1:] if update.message and update.message.text else ''
-    command = raw_cmd.split()[0].split('@')[0]
+    command = raw_cmd.split()[0].split('@')[0].lower()
     chat_id = update.message.chat_id
 
     try:
-        if command in ['start', 'help']:
+        if command == 'start':
             await handle_start(update, context)
+        elif command == 'help':
+            await handle_help(update, context)
         elif command == 'add_word':
             await handle_add_word(update, context)
         elif command == 'next_new':
             await handle_next_new(update, context)
         elif command == 'next_test':
             await handle_next_test(update, context)
+        elif command in ['stop', 'notifications_off', 'unsubscribe']:
+            await handle_notifications_off(update, context)
+        elif command in ['notifications_on', 'subscribe']:
+            await handle_notifications_on(update, context)
     except Exception as e:
         if chat_id in running_activities.chat_ids: running_activities.pop_all(chat_id)
         release_all_locks()
@@ -259,29 +265,131 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     bot = context._application.bot
     uilang = lang_map[bot.token]
     user_data = user_config.get_user_data(chat_id)
+    is_notif = user_config.is_notifications_enabled(chat_id)
+    notif_status = "🔔 Включены (5 раз в день)" if is_notif else "🔕 Отключены"
 
     welcome_msg = (
         f"🇫🇷 *Bonjour !* Я бот для изучения французского языка для поездки в Париж (уровень A1 → A2).\n\n"
-        f"Твой Chat ID: `{chat_id}` (настройки активированы!)\n\n"
-        f"📌 *Команды:*\n"
-        f"/next_new — Учить новое слово (с артиклем, транскрипцией и примером)\n"
-        f"/next_test — Проверить выученные слова (тест/карточки)\n"
-        f"/add_word — Добавить слово вручную\n\n"
-        f"Нажми /next_new чтобы начать!"
+        f"Уведомления по расписанию: *{notif_status}*\n\n"
+        f"📌 *Основные команды:*\n"
+        f"• /next_new — Новое слово (с артиклем, транскрипцией, примером и сразу озвучкой)\n"
+        f"• /next_test — Проверить выученные слова (тест/флэшкарты)\n"
+        f"• /add_word — Добавить свое слово для изучения\n"
+        f"• /help — Подробная справка по всем командам и кнопкам\n\n"
+        f"⚙️ *Уведомления и подписка:*\n"
+        f"• /stop или /notifications_off — Отключить авторассылку по расписанию\n"
+        f"• /notifications_on — Включить авторассылку по расписанию\n\n"
+        f"Нажмите /next_new чтобы начать!"
     ) if uilang == 'russian' else (
         f"🇫🇷 *Bonjour!* I am your French vocabulary bot for your trip to Paris (A1 → A2).\n\n"
-        f"Your Chat ID: `{chat_id}`\n\n"
+        f"Notifications: *{notif_status}*\n\n"
         f"Commands:\n"
-        f"/next_new — Next new word\n"
-        f"/next_test — Next test\n"
-        f"/add_word — Add word\n\n"
-        f"Press /next_new to begin!"
+        f"• /next_new — Next new word (with audio & examples)\n"
+        f"• /next_test — Test learned words\n"
+        f"• /add_word — Add word manually\n"
+        f"• /stop — Disable notifications\n"
+        f"• /notifications_on — Enable notifications\n"
+        f"• /help — Detailed help guide\n\n"
+        f"Press /next_new to start!"
     )
     await tel_send_message(bot, chat_id, welcome_msg)
 
     # Проверяем и запускаем фоновую предгенерацию буфера слов
     lang = user_data.get('language', 'french')
     asyncio.create_task(lp.ensure_word_buffer(chat_id, lang))
+
+
+async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    uilang = lang_map[bot.token]
+    is_notif = user_config.is_notifications_enabled(chat_id)
+    notif_status = "🔔 Включены (5 раз в день)" if is_notif else "🔕 Отключены"
+
+    help_msg = (
+        f"📖 *СПРАВКА ПО БОТУ И КОМАНДАМ*\n\n"
+        f"🎯 *Цель бота:* изучение ключевых французских слов и выражений для комфортной поездки в Париж (кафе, отель, метро, вокзал, улицы, музеи) на уровне A1.\n\n"
+        f"Статус уведомлений для вас: *{notif_status}*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 *КОМАНДЫ БОТА:*\n"
+        f"• /next_new — Показать следующее новое слово. Бот присылает карточку с переводом, транскрипцией, контекстным примером и сразу голосовым сообщением с правильным произношением.\n"
+        f"• /next_test — Проверить изученные слова. Тестируются только те слова, которые вы уже учили, строго в рамках уровня A1 (без сложной грамматики).\n"
+        f"• /add_word — Добавить свое слово для изучения (введите слово после команды).\n"
+        f"• /stop (или /notifications_off) — Отключить авторассылку по расписанию.\n"
+        f"• /notifications_on (или /subscribe) — Включить напоминания по расписанию (09:00, 12:00, 15:00, 19:00, 21:00).\n"
+        f"• /help — Открыть это руководство.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"🔘 *КНОПКИ В УПРАЖНЕНИЯХ:*\n\n"
+        f"🟢 *При изучении новых слов (/next_new):*\n"
+        f"• *Next* (Далее) — перейти к следующему слову.\n\n"
+        f"🔵 *При проверке и тестах (/next_test):*\n"
+        f"• *Easier* (Легче) — уменьшить сложность тестовой фразы (сделать предложение короче и проще).\n"
+        f"• *Harder* (Сложнее) — увеличить сложность тестовой фразы (в рамках уровня A1).\n"
+        f"• *Hint* (Подсказка) — показать первую букву правильного слова.\n"
+        f"• *Correct answer* (Правильный ответ) — сразу показать правильный ответ с переводом.\n"
+        f"• *Answer audio* (Озвучить ответ) — прослушать произношение правильного ответа.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 *Как отвечать в тестах?*\n"
+        f"Просто напишите перевод в чат обычным сообщением. Бот проверит точность перевода, доброжелательно укажет на ошибки и оценит по шкале от 1 до 5!"
+    ) if uilang == 'russian' else (
+        f"📖 *BOT GUIDE & COMMANDS*\n\n"
+        f"Notifications: *{notif_status}*\n\n"
+        f"Commands:\n"
+        f"• /next_new — Next new word\n"
+        f"• /next_test — Test learned words\n"
+        f"• /add_word — Add word manually\n"
+        f"• /stop or /notifications_off — Disable notifications\n"
+        f"• /notifications_on — Enable notifications\n"
+        f"• /help — This help message\n\n"
+        f"Buttons:\n"
+        f"• Next — Continue\n"
+        f"• Easier / Harder — Adjust sentence difficulty (1-5)\n"
+        f"• Hint — Show hint\n"
+        f"• Correct answer — Show solution\n"
+        f"• Answer audio — Audio of answer\n"
+    )
+    await tel_send_message(bot, chat_id, help_msg)
+
+
+async def handle_notifications_off(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    uilang = lang_map[bot.token]
+    user_config.set_notifications(chat_id, enabled=False)
+
+    msg = (
+        "🔕 *Уведомления по расписанию отключены.*\n\n"
+        "Бот больше не будет автоматически присылать слова и тесты в течение дня.\n\n"
+        "Вы всегда можете заниматься в любое удобное время самостоятельно:\n"
+        "• /next_new — Учить новое слово\n"
+        "• /next_test — Проверить выученные слова\n\n"
+        "Чтобы снова включить автоматические напоминания по расписанию, отправьте /notifications_on или /subscribe."
+    ) if uilang == 'russian' else (
+        "🔕 *Notifications disabled.*\n\n"
+        "Scheduled reminders have been turned off. You can still practice anytime manually via /next_new and /next_test.\n\n"
+        "To re-enable scheduled reminders, send /notifications_on or /subscribe."
+    )
+    await tel_send_message(bot, chat_id, msg)
+
+
+async def handle_notifications_on(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    uilang = lang_map[bot.token]
+    user_config.set_notifications(chat_id, enabled=True)
+
+    msg = (
+        "🔔 *Уведомления по расписанию включены!*\n\n"
+        "Бот будет присылать напоминания для изучения и повторения слов 5 раз в день:\n"
+        "• Будни: 09:00, 12:00, 15:00, 19:00, 21:00\n"
+        "• Выходные: 10:00, 13:00, 16:00, 20:00, 22:00\n\n"
+        "Чтобы отключить напоминания в любой момент, отправьте /stop или /notifications_off."
+    ) if uilang == 'russian' else (
+        "🔔 *Notifications enabled!*\n\n"
+        "You will receive reminders 5 times a day according to schedule.\n\n"
+        "To disable, send /stop or /notifications_off."
+    )
+    await tel_send_message(bot, chat_id, msg)
 
 
 async def handle_add_word(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -574,20 +682,20 @@ async def ping_users(context):
 
     users_to_ping = []
     for chat_id, v in user_data.items():
-        if v['ui_language'] != uilang: continue
+        if v.get('ui_language') != uilang: continue
+        if not v.get('notifications_enabled', True): continue
+        if 'words' not in v.get('exercise_types', []): continue
 
         user_now = datetime.now(tz=ZoneInfo(user_data[chat_id]["timezone"]))
+        ping_schedule = user_data[chat_id]['schedule']['words'][schedule_col]
 
-        if 'words' in user_data[chat_id]['exercise_types']:
-            ping_schedule = user_data[chat_id]['schedule']['words'][schedule_col]
+        user_ping_times = [datetime.combine(user_now.date(), ptime) for ptime in ping_schedule.keys()]
 
-            user_ping_times = [datetime.combine(user_now.date(), ptime) for ptime in ping_schedule.keys()]
-
-            ping_schedule = [pexersize for uptime, pexersize in zip(user_ping_times, ping_schedule.values()) 
-                                if abs(uptime - user_now) <= timedelta(minutes=1)]
-            if len(ping_schedule) == 0:
-                continue
-            users_to_ping.append(dict(chat_id=chat_id, lang=user_data[chat_id]['language'], exercise=ping_schedule[0]))
+        ping_schedule = [pexersize for uptime, pexersize in zip(user_ping_times, ping_schedule.values()) 
+                            if abs(uptime - user_now) <= timedelta(minutes=1)]
+        if len(ping_schedule) == 0:
+            continue
+        users_to_ping.append(dict(chat_id=chat_id, lang=user_data[chat_id]['language'], exercise=ping_schedule[0]))
 
     try:
         for user in users_to_ping:
@@ -633,6 +741,17 @@ async def run_apps(apps):
     for app in apps:
         await app.initialize()
         await app.start()
+        try:
+            await app.bot.set_my_commands([
+                BotCommand("next_new", "Новое слово (с озвучкой)"),
+                BotCommand("next_test", "Тест / повторение выученного"),
+                BotCommand("help", "Справка по командам и кнопкам"),
+                BotCommand("stop", "Отключить уведомления"),
+                BotCommand("notifications_on", "Включить уведомления (5/день)"),
+                BotCommand("add_word", "Добавить слово вручную"),
+            ])
+        except Exception as e:
+            print(f"Could not set bot commands: {e}")
     
     try:
         polling_tasks = [
@@ -706,6 +825,11 @@ if __name__ == '__main__':
         application.add_handler(CommandHandler("add_word", handle_command))
         application.add_handler(CommandHandler("next_test", handle_command))
         application.add_handler(CommandHandler("next_new", handle_command))
+        application.add_handler(CommandHandler("stop", handle_command))
+        application.add_handler(CommandHandler("notifications_off", handle_command))
+        application.add_handler(CommandHandler("unsubscribe", handle_command))
+        application.add_handler(CommandHandler("notifications_on", handle_command))
+        application.add_handler(CommandHandler("subscribe", handle_command))
         application.add_handler(CallbackQueryHandler(handle_inline_request))
 
         job_queue = application.job_queue

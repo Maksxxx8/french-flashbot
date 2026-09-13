@@ -26,8 +26,8 @@ EDGE_TTS_VOICES = {
 def parse_json_safely(content: str, validation_cls=None):
     """
     Безопасно парсит JSON от LLM и валидирует через Pydantic.
-    Устойчив к неэкранированным символам перевода строки внутри значений,
-    управляющим символам ASCII (\u0000-\u001F) и маркдаун-обёрткам.
+    Устойчив к неэкранированным кавычкам, переводам строк внутри значений,
+    незакрытым скобкам (truncated JSON) и маркдаун-обёрткам.
     """
     text = content.strip()
     if text.startswith('```'):
@@ -38,41 +38,87 @@ def parse_json_safely(content: str, validation_cls=None):
             lines = lines[:-1]
         text = '\n'.join(lines).strip()
 
+    # Очистка от непечатных ASCII control characters
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+
     # Поиск первой и последней фигурной/квадратной скобки
     match = re.search(r'(\{.*\}|\[.*\])', text, re.DOTALL)
     candidate = match.group(0) if match else text
 
-    # Первая попытка: стандартный json.loads с strict=False (разрешает control characters в строках)
+    # Попытка 1: стандартный json.loads с strict=False
     try:
         data = json.loads(candidate, strict=False)
     except Exception:
-        # Вторая попытка: очистка от непечатных управляющих символов и экранирование переносов внутри кавычек
-        sanitized = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', candidate)
-
-        def escape_newlines_in_strings(s: str) -> str:
-            in_string = False
-            escaped = False
-            result = []
-            for ch in s:
-                if ch == '"' and not escaped:
-                    in_string = not in_string
-                    result.append(ch)
-                elif in_string and ch == '\n':
-                    result.append('\\n')
-                elif in_string and ch == '\r':
-                    result.append('\\r')
-                elif in_string and ch == '\t':
-                    result.append('\\t')
+        # Попытка 2: починка неэкранированных внутренних кавычек и закрытие незавершённых строк/скобок
+        pattern_closed = re.compile(r'^(\s*"[a-zA-Z0-9_]+"\s*:\s*")(.*)(",?\s*)$')
+        pattern_unclosed = re.compile(r'^(\s*"[a-zA-Z0-9_]+"\s*:\s*")(.*)$')
+        fixed_lines = []
+        for line in candidate.splitlines():
+            m = pattern_closed.match(line)
+            if m:
+                prefix, val_content, suffix = m.groups()
+                val_content = val_content.replace('\\"', '"').replace('"', '\\"')
+                fixed_lines.append(prefix + val_content + suffix)
+            else:
+                m2 = pattern_unclosed.match(line)
+                if m2 and not line.rstrip().endswith(('}', ']', '{', '[')):
+                    prefix, val_content = m2.groups()
+                    val_content = val_content.replace('\\"', '"').replace('"', '\\"')
+                    fixed_lines.append(prefix + val_content + '"')
                 else:
-                    result.append(ch)
-                if ch == '\\' and not escaped:
-                    escaped = True
-                else:
-                    escaped = False
-            return ''.join(result)
+                    fixed_lines.append(line)
+        repaired = '\n'.join(fixed_lines)
 
-        sanitized = escape_newlines_in_strings(sanitized)
-        data = json.loads(sanitized, strict=False)
+        # Балансировка незакрытых кавычек и фигурных/квадратных скобок
+        in_str = False
+        esc = False
+        stack = []
+        for ch in repaired:
+            if ch == '"' and not esc:
+                in_str = not in_str
+            elif not in_str:
+                if ch in ('{', '['):
+                    stack.append('}' if ch == '{' else ']')
+                elif ch in ('}', ']'):
+                    if stack and stack[-1] == ch:
+                        stack.pop()
+            if ch == '\\' and not esc:
+                esc = True
+            else:
+                esc = False
+
+        if in_str:
+            repaired += '"'
+        while stack:
+            repaired += stack.pop()
+
+        try:
+            data = json.loads(repaired, strict=False)
+        except Exception:
+            # Попытка 3: экранирование переводов строк внутри строк
+            def escape_newlines(s: str) -> str:
+                in_string = False
+                escaped = False
+                res = []
+                for ch in s:
+                    if ch == '"' and not escaped:
+                        in_string = not in_string
+                        res.append(ch)
+                    elif in_string and ch == '\n':
+                        res.append('\\n')
+                    elif in_string and ch == '\r':
+                        res.append('\\r')
+                    elif in_string and ch == '\t':
+                        res.append('\\t')
+                    else:
+                        res.append(ch)
+                    if ch == '\\' and not escaped:
+                        escaped = True
+                    else:
+                        escaped = False
+                return ''.join(res)
+
+            data = json.loads(escape_newlines(repaired), strict=False)
 
     if validation_cls is not None:
         return validation_cls.model_validate(data)
@@ -91,12 +137,15 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
 
     system_prompt = interface["You are a great language teacher"][uilang]
     model_name = model_base or os.getenv('MODEL_BASE', 'gemini-3.6-flash')
-    max_attempts = 3
+    max_attempts = 4
     nattempts = 0
     last_error = None
 
-    # Увеличен лимит токенов до 4096, чтобы исключить обрезку JSON (EOF while parsing)
-    gen_config_kwargs = {'max_output_tokens': 4096}
+    # Лимит токенов 4096 и температура 0.7 (предотвращает срабатывание фильтра цитирования RECITATION)
+    gen_config_kwargs = {
+        'max_output_tokens': 4096,
+        'temperature': 0.7,
+    }
     if validation_cls is not None:
         gen_config_kwargs['response_mime_type'] = 'application/json'
         try:
@@ -120,6 +169,10 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
     while nattempts < max_attempts:
         nattempts += 1
         try:
+            # На повторных попытках повышаем температуру для максимальной вариативности
+            if nattempts > 1:
+                gen_config_kwargs['temperature'] = min(1.0, 0.7 + (nattempts - 1) * 0.12)
+
             model = genai.GenerativeModel(
                 model_name=model_name,
                 system_instruction=system_prompt,
@@ -132,7 +185,21 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
                 generation_config=generation_config,
             )
 
-            content = response.text.strip()
+            # Безопасное извлечение текста ответа без исключения finish_reason=4
+            content = None
+            if hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                finish_reason = getattr(candidate, 'finish_reason', None)
+                if finish_reason == 4:
+                    raise ValueError("Сработал фильтр цитирования RECITATION. Повышаем вариативность и повторяем...")
+                if hasattr(candidate, 'content') and candidate.content and candidate.content.parts:
+                    parts_text = [p.text for p in candidate.content.parts if hasattr(p, 'text') and p.text]
+                    if parts_text:
+                        content = "".join(parts_text).strip()
+
+            if not content:
+                content = response.text.strip()
+
             if validation_cls is not None:
                 validated_resp = parse_json_safely(content, validation_cls)
             else:
@@ -145,7 +212,7 @@ async def get_assistant_response(interface, query, uilang, model_base, model_sub
             print(f'Ошибка обработки ответа Gemini (попытка {nattempts}): {e}')
             if nattempts < max_attempts:
                 await asyncio.sleep(nattempts * 2)
-                if nattempts == max_attempts - 1:
+                if nattempts >= 2:
                     model_name = model_substitute or os.getenv('MODEL_SUBSTITUTE', 'gemini-3.6-flash')
 
     raise ValueError(f'Модель не смогла дать валидный ответ после {max_attempts} попыток. Последняя ошибка: {last_error}')

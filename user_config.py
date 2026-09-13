@@ -13,6 +13,7 @@ DEFAULT_CONFIG = {
     "level": "A1",
     "max_tokens": 800,
     "show_words_due": True,
+    "notifications_enabled": True,
     "n_flashcards": 5,
     "exercise_types": ["words"],
     "schedule": {
@@ -133,6 +134,48 @@ class UserConfig:
             lang = self._default_template.get('ui_language', 'russian')
         self._lock.release()
         return lang
+
+    def _save_locked(self):
+        try:
+            with open(self.data_path, 'w', encoding='utf-8') as fp:
+                json.dump(self._user_data_orig, fp, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"Предупреждение: не удалось сохранить {self.data_path}: {e}")
+
+    def set_notifications(self, chat_id, enabled: bool):
+        self._lock.acquire()
+        try:
+            chat_id = int(chat_id)
+            if chat_id not in self._user_data:
+                self._user_data[chat_id] = copy.deepcopy(self._default_template)
+                self._init_user_schedule(chat_id)
+                self._user_data_orig[str(chat_id)] = copy.deepcopy(self._default_template)
+
+            self._user_data[chat_id]['notifications_enabled'] = bool(enabled)
+            if enabled:
+                if 'words' not in self._user_data[chat_id].get('exercise_types', []):
+                    self._user_data[chat_id]['exercise_types'] = ['words']
+            else:
+                self._user_data[chat_id]['exercise_types'] = []
+
+            if str(chat_id) in self._user_data_orig:
+                self._user_data_orig[str(chat_id)]['notifications_enabled'] = bool(enabled)
+                self._user_data_orig[str(chat_id)]['exercise_types'] = copy.deepcopy(self._user_data[chat_id]['exercise_types'])
+
+            self._save_locked()
+            print(f"Уведомления для пользователя {chat_id} установлены в {enabled}")
+        finally:
+            self._lock.release()
+
+    def is_notifications_enabled(self, chat_id) -> bool:
+        self._lock.acquire()
+        try:
+            chat_id = int(chat_id)
+            if chat_id in self._user_data:
+                return self._user_data[chat_id].get('notifications_enabled', True) and len(self._user_data[chat_id].get('exercise_types', [])) > 0
+            return True
+        finally:
+            self._lock.release()
 
     def release_lock(self):
         if self._lock.locked():

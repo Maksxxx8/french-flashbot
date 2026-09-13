@@ -196,12 +196,17 @@ class LearningPlan:
         conjugations = _clean_str(row_item.get('conjugations'))
         audio_path = _clean_str(row_item.get('audio_path'))
 
+        known_words = self.get_learned_words(chat_id, lang)
+
         if 'test_flashcard' == mode:
             exercise = FlashcardExercise(word=row_item['word'], word_id=word_id, lang=lang, uilang=uilang, level=user_level,
-                                         interface=self.interface, templates=self.templates)
+                                         interface=self.interface, templates=self.templates,
+                                         translation=translation, example_sentence=example_sentence,
+                                         example_translation=example_translation, known_words=known_words)
         elif 'test_translation' == mode:
             exercise = WordsExerciseTest(word=row_item['word'], word_id=word_id, lang=lang, uilang=uilang, level=user_level,
-                                         interface=self.interface, templates=self.templates)
+                                         interface=self.interface, templates=self.templates,
+                                         known_words=known_words)
         else:
             exercise = WordsExerciseLearn(word=row_item['word'], meaning=meaning,
                                           translation=translation, transcription=transcription,
@@ -214,6 +219,20 @@ class LearningPlan:
             asyncio.create_task(self.ensure_word_buffer(chat_id, lang))
 
         return exercise
+
+    def get_learned_words(self, chat_id: str, lang: str) -> List[str]:
+        words_df = self.words_db.get_words_df()
+        progress_df = self.progress_db.get_progress_df()
+        if words_df.shape[0] == 0 or progress_df.shape[0] == 0:
+            return []
+        merged = pd.merge(progress_df, words_df, how='inner', left_on='word_id', right_on='id', sort=False)
+        user_words = merged.loc[
+            (merged['lang'] == lang.lower()) &
+            (merged['chat_id'] == chat_id) &
+            (merged['to_ignore'].isin([False, np.nan])) &
+            (merged['num_reps'] > 0)
+        ]
+        return user_words['word'].dropna().unique().tolist()
 
     def get_due_today(self, chat_id: str, lang: str) -> List[str]:
 
