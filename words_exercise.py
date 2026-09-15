@@ -2,14 +2,37 @@ import math
 import os
 import random
 import re
-from typing import List, Optional
+from typing import Any, List, Optional
 import jinja2
 import pandas as pd
 from utils import get_assistant_response
 
-from pydantic import BaseModel, Field, ValidationError, ConfigDict
+from pydantic import BaseModel, Field, ValidationError, ConfigDict, model_validator
 
 from exercise import Exercise
+
+
+def normalize_french_text(s: str) -> str:
+    s = str(s).lower().strip()
+    s = re.sub(r"['’`]", "'", s)
+    s = re.sub(r'[^\w\s\']', '', s)
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def sanitize_word_translation(translation: str, target_word: str) -> str:
+    if not translation:
+        return ""
+    text = str(translation).strip()
+    words_to_remove = [target_word.strip()]
+    bare = re.sub(r"^(l'|le\s+|la\s+|un\s+|une\s+|les\s+|des\s+|d')", "", target_word, flags=re.IGNORECASE).strip()
+    if bare and bare.lower() != target_word.lower():
+        words_to_remove.append(bare)
+    for w in words_to_remove:
+        text = re.sub(r'[\(\[\{]\s*' + re.escape(w) + r'\s*[\)\]\}]', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'(?i)\b' + re.escape(w) + r'\b', '', text)
+    text = re.sub(r'[\(\[\{]\s*[\)\]\}]', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text or translation
 
 
 class ExampleTestSentenceSchema(BaseModel):
@@ -46,10 +69,35 @@ class WordExamplesSchema(BaseModel):
 class ResponseCorrectionSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
-    translation_score: int = 3
+    translation_score: int = 5
     score_justification: str = ""
     mistakes_explanation: Optional[str] = None
     corrected_translation: str = ""
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            score = data.get('translation_score')
+            if score is None:
+                score = data.get('score', 5)
+            justification = (data.get('score_justification') or data.get('justification') 
+                             or data.get('feedback') or "")
+            explanation = (data.get('mistakes_explanation') or data.get('explanation') 
+                           or data.get('mistake_explanation') or "")
+            corrected = (data.get('corrected_translation') or data.get('correct_translation') 
+                         or data.get('corrected') or "")
+            try:
+                score_int = int(score)
+            except Exception:
+                score_int = 5
+            return {
+                'translation_score': score_int,
+                'score_justification': str(justification),
+                'mistakes_explanation': str(explanation) if explanation else None,
+                'corrected_translation': str(corrected),
+            }
+        return data
 
 
 class FlashCardExampleSchema(BaseModel):
@@ -63,8 +111,27 @@ class FlashCardExampleSchema(BaseModel):
 class FlashcardCorrectionSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
-    translation_score: int = 3
+    translation_score: int = 5
     score_justification: str = ""
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            score = data.get('translation_score')
+            if score is None:
+                score = data.get('score', 5)
+            justification = (data.get('score_justification') or data.get('justification') 
+                             or data.get('feedback') or data.get('explanation') or "")
+            try:
+                score_int = int(score)
+            except Exception:
+                score_int = 5
+            return {
+                'translation_score': score_int,
+                'score_justification': str(justification),
+            }
+        return data
 
 
 class WordsExerciseLearn(Exercise):
@@ -217,28 +284,38 @@ class WordsExerciseTest(Exercise):
             
         else:
             self.user_messages.append(user_response)
+            clean_user = normalize_french_text(user_response or '')
+            clean_target = normalize_french_text(self.correct_answer())
 
-            message_template = self.templates.get_template(self.uilang, self.lang, 'test_word_query_2')
+            if clean_user and clean_user == clean_target:
+                assistant_response = ResponseCorrectionSchema(
+                    translation_score=5,
+                    score_justification="Отлично! Предложение переведено абсолютно точно.",
+                    mistakes_explanation=None,
+                    corrected_translation=self.correct_answer()
+                )
+            else:
+                message_template = self.templates.get_template(self.uilang, self.lang, 'test_word_query_2')
 
-            template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            query = template.render(lang=self.interface[self.lang][self.uilang],
-                                    user_response=user_response, sentence=self.test_sentence(),
-                                    word=self.word)
+                template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
+                query = template.render(lang=self.interface[self.lang][self.uilang],
+                                        user_response=user_response, sentence=self.test_sentence(),
+                                        word=self.word)
 
-            validation_cls = ResponseCorrectionSchema
-            schema = validation_cls.model_json_schema()
+                validation_cls = ResponseCorrectionSchema
+                schema = validation_cls.model_json_schema()
 
-            response_format = {
-                "type": "json_schema",
-                "json_schema": {"strict": True,
-                                "name": "word_example",
-                                "schema": schema
-                                }
-            }
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {"strict": True,
+                                    "name": "word_example",
+                                    "schema": schema
+                                    }
+                }
 
-            assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
-                                                        model_substitute=self.model_substitute, uilang=self.uilang,
-                                                        response_format=response_format, validation_cls=validation_cls)
+                assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
+                                                            model_substitute=self.model_substitute, uilang=self.uilang,
+                                                            response_format=response_format, validation_cls=validation_cls)
             message_template = self.templates.get_template(self.uilang, self.lang, 'test_word_user_message_2')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
             message = template.render(score=assistant_response.translation_score,
@@ -302,10 +379,11 @@ class FlashcardExercise(Exercise):
                         self.example_sentence and not pd.isna(self.example_sentence) and
                         self.example_translation and not pd.isna(self.example_translation))
             if has_data:
+                clean_trans = sanitize_word_translation(str(self.translation), self.word)
                 self.assistant_responses.append(dict(
                     example=str(self.example_sentence),
                     translation_example=str(self.example_translation),
-                    translation_word=str(self.translation)
+                    translation_word=clean_trans
                 ))
             else:
                 # first message to the user
@@ -328,8 +406,9 @@ class FlashcardExercise(Exercise):
                                                             model_substitute=self.model_substitute, uilang=self.uilang,
                                                             response_format=response_format, validation_cls=validation_cls)
                 
+                clean_trans = sanitize_word_translation(assistant_response.translation_of_word, self.word)
                 self.assistant_responses.append(dict(example=assistant_response.example, translation_example=assistant_response.translation_of_example,
-                                                     translation_word=assistant_response.translation_of_word))
+                                                     translation_word=clean_trans))
 
             message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_user_message_1')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
@@ -338,27 +417,42 @@ class FlashcardExercise(Exercise):
             
         else:
             self.user_messages.append(user_response)
+            clean_user = normalize_french_text(user_response or '')
+            clean_target = normalize_french_text(self.word)
+            bare_target = normalize_french_text(re.sub(r"^(l'|le\s+|la\s+|un\s+|une\s+|les\s+|des\s+|d')", "", self.word, flags=re.IGNORECASE))
 
-            message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_query_2')
+            if clean_user and clean_user == clean_target:
+                assistant_response = FlashcardCorrectionSchema(
+                    translation_score=5,
+                    score_justification="Отлично! Абсолютно верный перевод."
+                )
+            elif clean_user and bare_target and clean_user == bare_target:
+                assistant_response = FlashcardCorrectionSchema(
+                    translation_score=5,
+                    score_justification=f"Правильно! Слово верно переведено. Не забывай артикль: {self.word}."
+                )
+            else:
+                message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_query_2')
 
-            template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            query = template.render(lang=self.interface[self.lang][self.uilang], user_response=user_response,
-                                    word_translation=self.assistant_responses[-1]['translation_word'], correct_answer=self.word)
+                template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
+                query = template.render(lang=self.interface[self.lang][self.uilang], user_response=user_response,
+                                        word_translation=self.assistant_responses[-1]['translation_word'], correct_answer=self.word)
 
-            validation_cls = FlashcardCorrectionSchema
-            schema = validation_cls.model_json_schema()
+                validation_cls = FlashcardCorrectionSchema
+                schema = validation_cls.model_json_schema()
 
-            response_format = {
-                "type": "json_schema",
-                "json_schema": {"strict": True,
-                                "name": "word_example",
-                                "schema": schema
-                                }
-            }
+                response_format = {
+                    "type": "json_schema",
+                    "json_schema": {"strict": True,
+                                    "name": "word_example",
+                                    "schema": schema
+                                    }
+                }
 
-            assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
-                                                        model_substitute=self.model_substitute, uilang=self.uilang,
-                                                        response_format=response_format, validation_cls=validation_cls)
+                assistant_response = await get_assistant_response(self.interface, query, model_base=self.model_base,
+                                                            model_substitute=self.model_substitute, uilang=self.uilang,
+                                                            response_format=response_format, validation_cls=validation_cls)
+
             message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_user_message_2')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
             correct_answer = self.word if assistant_response.translation_score < 5 else None
