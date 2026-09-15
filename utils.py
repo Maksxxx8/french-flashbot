@@ -127,18 +127,15 @@ def parse_json_safely(content: str, validation_cls=None):
 
     if validation_cls is not None:
         # Gemini иногда возвращает массив объектов вместо объекта-обёртки.
-        # Если тип списка, но схема ожидает объект с полем 'words', — автоматически адаптируем.
+        # Адаптируем список к целевой схеме, не отбрасывая элементы.
         if isinstance(data, list):
-            # Пробуем достать поле 'words' из первого элемента (старый вариант)
-            # Или оборачиваем список как {'words': [...], 'deck_theme': ...}
-            if data and isinstance(data[0], dict):
-                first = data[0]
-                deck_theme = first.get('deck_theme', '')
-                # Если каждый элемент содержит deck_theme на верхнем уровне — это список слов
-                if 'word' in first or 'translation' in first:
-                    data = {'deck_theme': deck_theme, 'words': data}
-                else:
-                    data = data[0]
+            fields = getattr(validation_cls, 'model_fields', {})
+            if 'example_list' in fields:
+                data = {'example_list': data}
+            elif 'words' in fields:
+                first = data[0] if data and isinstance(data[0], dict) else {}
+                deck_theme = first.get('deck_theme', '') if isinstance(first, dict) else ''
+                data = {'deck_theme': deck_theme, 'words': data}
         return validation_cls.model_validate(data)
     return data
 

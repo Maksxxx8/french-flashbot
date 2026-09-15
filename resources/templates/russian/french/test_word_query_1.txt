@@ -25,3 +25,35 @@
 - example_sentence: предложение на французском языке
 - sentence_translation: перевод предложения на русский язык
 - difficulty: число от 1 до 5
+
+Верни JSON строго следующей структуры:
+{
+  "example_list": [
+    {
+      "difficulty": 1,
+      "example_sentence": "короткая фраза на французском (2–3 слова)",
+      "sentence_translation": "перевод предложения на русский"
+    },
+    {
+      "difficulty": 2,
+      "example_sentence": "простая фраза на французском (3–4 слова)",
+      "sentence_translation": "перевод предложения на русский"
+    },
+    {
+      "difficulty": 3,
+      "example_sentence": "предложение на французском (4–5 слов)",
+      "sentence_translation": "перевод предложения на русский"
+    },
+    {
+      "difficulty": 4,
+      "example_sentence": "предложение на французском (5–6 слов)",
+      "sentence_translation": "перевод предложения на русский"
+    },
+    {
+      "difficulty": 5,
+      "example_sentence": "предложение на французском (6–8 слов)",
+      "sentence_translation": "перевод предложения на русский"
+    }
+  ]
+}
+

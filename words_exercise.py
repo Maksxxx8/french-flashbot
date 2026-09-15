@@ -56,6 +56,17 @@ class WordTestSchema(BaseModel):
 
     example_list: list[ExampleTestSentenceSchema] = Field(default_factory=list)
 
+    @model_validator(mode='before')
+    @classmethod
+    def wrap_list(cls, data: Any) -> Any:
+        if isinstance(data, list):
+            return {'example_list': data}
+        if isinstance(data, dict) and 'example_list' not in data:
+            for k in ('examples', 'sentences', 'items', 'list'):
+                if k in data and isinstance(data[k], list):
+                    return {'example_list': data[k]}
+        return data
+
 
 class WordExamplesSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
@@ -64,6 +75,19 @@ class WordExamplesSchema(BaseModel):
     pronunciation: Optional[str] = None   # IPA-транскрипция слова
     translation: Optional[str] = None     # Перевод слова на русский (для французского)
     conjugations: Optional[str] = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def wrap_list(cls, data: Any) -> Any:
+        if isinstance(data, list):
+            return {'example_list': data}
+        if isinstance(data, dict) and 'example_list' not in data:
+            for k in ('examples', 'sentences', 'items', 'list'):
+                if k in data and isinstance(data[k], list):
+                    data_cpy = dict(data)
+                    data_cpy['example_list'] = data_cpy[k]
+                    return data_cpy
+        return data
 
 
 class ResponseCorrectionSchema(BaseModel):
@@ -237,10 +261,14 @@ class WordsExerciseTest(Exercise):
         self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
     def correct_answer(self):
+        if not self.assistant_responses or not self.assistant_responses[0]:
+            return self.word
         idx = max(0, min(len(self.assistant_responses[0]) - 1, self.difficulty - 1))
         return self.assistant_responses[0][idx]['answer']
     
     def test_sentence(self):
+        if not self.assistant_responses or not self.assistant_responses[0]:
+            return f"Переведите слово: {self.word}"
         idx = max(0, min(len(self.assistant_responses[0]) - 1, self.difficulty - 1))
         return self.assistant_responses[0][idx]['test']
 
@@ -273,7 +301,10 @@ class WordsExerciseTest(Exercise):
             examples = sorted(assistant_response.example_list, key=lambda x: x.difficulty)
             examples = [dict(test=item.sentence_translation, answer=item.example_sentence) for item in examples]
 
-            self.difficulty = 2
+            if not examples:
+                examples = [dict(test=f"Переведите: {self.word}", answer=self.word)]
+
+            self.difficulty = min(2, len(examples))
 
             self.assistant_responses.append(examples)
 
@@ -369,7 +400,8 @@ class FlashcardExercise(Exercise):
         self.model_substitute = os.getenv('MODEL_SUBSTITUTE', 'gemini-3.5-flash-lite')
 
     def correct_answer(self):
-        return f'{self.word}\n\n{self.interface["Example"][self.uilang]}: {self.assistant_responses[0]["example"]}'
+        ex = self.assistant_responses[0].get("example", "") if self.assistant_responses and self.assistant_responses[0] else ""
+        return f'{self.word}\n\n{self.interface["Example"][self.uilang]}: {ex}'
 
     async def get_next_user_message(self, user_response: Optional[str]):
         lang_tr = self.interface[self.lang][self.uilang]
@@ -410,9 +442,11 @@ class FlashcardExercise(Exercise):
                 self.assistant_responses.append(dict(example=assistant_response.example, translation_example=assistant_response.translation_of_example,
                                                      translation_word=clean_trans))
 
+            word_tr = self.assistant_responses[0]['translation_word'] if self.assistant_responses and self.assistant_responses[0] else self.word
+            ex_tr = self.assistant_responses[0]['translation_example'] if self.assistant_responses and self.assistant_responses[0] else ""
             message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_user_message_1')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
-            message = template.render(lang=lang_tr, lang_ui=self.uilang, word=self.assistant_responses[0]['translation_word'], example=self.assistant_responses[0]['translation_example'])
+            message = template.render(lang=lang_tr, lang_ui=self.uilang, word=word_tr, example=ex_tr)
             quality = None
             
         else:
@@ -435,8 +469,9 @@ class FlashcardExercise(Exercise):
                 message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_query_2')
 
                 template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
+                word_tr = self.assistant_responses[-1]['translation_word'] if self.assistant_responses and self.assistant_responses[-1] else self.word
                 query = template.render(lang=self.interface[self.lang][self.uilang], user_response=user_response,
-                                        word_translation=self.assistant_responses[-1]['translation_word'], correct_answer=self.word)
+                                        word_translation=word_tr, correct_answer=self.word)
 
                 validation_cls = FlashcardCorrectionSchema
                 schema = validation_cls.model_json_schema()
@@ -456,7 +491,7 @@ class FlashcardExercise(Exercise):
             message_template = self.templates.get_template(self.uilang, self.lang, 'flashcard_user_message_2')
             template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
             correct_answer = self.word if assistant_response.translation_score < 5 else None
-            context_translation = self.assistant_responses[-1]['example']
+            context_translation = self.assistant_responses[-1]['example'] if self.assistant_responses and self.assistant_responses[-1] else ""
             message = template.render(score=assistant_response.translation_score,
                                 justification=assistant_response.score_justification,
                                 correct_answer=correct_answer,
