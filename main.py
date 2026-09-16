@@ -260,8 +260,8 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_stats(update, context)
         elif command == 'words':
             await handle_words(update, context)
-        elif command.startswith('replay_'):
-            await handle_replay(update, context, command)
+        elif command == 'replay' or command.startswith('replay_'):
+            await handle_replay(update, context, raw_cmd)
     except Exception as e:
         if chat_id in running_activities.chat_ids: running_activities.pop_all(chat_id)
         release_all_locks()
@@ -303,18 +303,49 @@ async def handle_replay(update, context, command):
     uilang = lang_map[bot.token]
     
     try:
-        word_id = int(command.split('_')[1])
-    except Exception:
+        raw_text = command.strip().lstrip('/')
+        clean_first = raw_text.split('@')[0]
+        if '_' in clean_first:
+            word_id = int(clean_first.split('_')[1])
+        else:
+            word_id = int(clean_first.split()[1])
+    except Exception as e:
+        print(f"Error parsing replay command '{command}': {e}")
         return
         
-    await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
-    
     exercise = await lp.get_words_exercise_by_id(chat_id, lang, word_id, mode='learn')
     if exercise is None:
         await tel_send_message(bot, chat_id, "Слово не найдено.")
         return
-        
-    await handle_new_exercise(bot, chat_id, exercise)
+
+    # 1. Отправляем текст карточки
+    try:
+        message, _ = await exercise.get_next_user_message(user_response=None)
+        await tel_send_message(bot, chat_id, message)
+    except Exception as e:
+        print(f"Error rendering replay message for word_id={word_id}: {e}")
+        await tel_send_message(bot, chat_id, f"🇫🇷 **{exercise.word}**")
+
+    # 2. Отправляем озвучку (голосовое сообщение)
+    pre_audio = getattr(exercise, 'audio_path', None)
+    audio_sent = False
+    if pre_audio and os.path.exists(pre_audio):
+        try:
+            await tel_send_audio(bot, chat_id, pre_audio, as_voice=True)
+            audio_sent = True
+        except Exception as e:
+            print(f'Error sending cached voice for word {exercise.word}: {e}')
+
+    if not audio_sent:
+        file_path = f'{chat_id}_{exercise.uid}.mp3'
+        try:
+            await get_audio(exercise.word, exercise.lang, file_path)
+            await tel_send_audio(bot, chat_id, file_path, as_voice=True)
+        except Exception as e:
+            print(f'Error generating audio for {exercise.word}: {e}')
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 
 async def handle_words(update, context):
@@ -968,6 +999,7 @@ if __name__ == '__main__':
         application.add_handler(CommandHandler("reset_progress", handle_command))
         application.add_handler(CommandHandler("stats", handle_command))
         application.add_handler(CommandHandler("words", handle_command))
+        application.add_handler(MessageHandler(filters.Regex(r"^/replay"), handle_command))
         application.add_handler(CallbackQueryHandler(handle_inline_request))
 
         job_queue = application.job_queue

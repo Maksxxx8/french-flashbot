@@ -94,11 +94,12 @@ class LearningPlan:
             example_translation = _clean_str(row_item.get('example_translation'))
             conjugations = _clean_str(row_item.get('conjugations'))
     
+            audio_path = _clean_str(row_item.get('audio_path'))
             return WordsExerciseLearn(row_item['word'], word_id, lang, uilang, self.interface, self.templates,
                                   meaning=meaning, translation=translation, transcription=transcription,
                                   example_sentence=example_sentence, example_translation=example_translation,
                                   conjugations=conjugations,
-                                  audio_path=f'resources/audio/{lang}/{word_id}.mp3', num_reps=0)
+                                  audio_path=audio_path, num_reps=0)
     
     async def get_next_words_exercise(self, chat_id: str, lang: str, mode: Optional[str]=None) -> Optional[Exercise]:
         
