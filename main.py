@@ -13,6 +13,7 @@ import requests
 from telegram import Update, BotCommand
 from telegram.ext import Application, MessageHandler, filters, CommandHandler, CallbackQueryHandler, ContextTypes
 import telegramify_markdown
+import pandas as pd
 
 from decks_db import DecksDB
 from exercise import Exercise
@@ -274,42 +275,20 @@ async def handle_stats(update, context):
     chat_id = update.message.chat_id
     bot = context._application.bot
     lang = user_config.get_user_data(chat_id)['language']
-    uilang = lang_map[bot.token]
 
-    progress_df = words_progress_db.get_progress_df()
-    words_df = words_db.get_words_df()
-    deck_words_df = decks_db.get_deck_word_df()
-    user_decks = decks_db.get_user_decks(chat_id, lang)
+    stats = lp.get_user_stats(chat_id, lang)
 
-    deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
-    deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
-
-    total_words = deck_words_df.shape[0]
-
-    if total_words == 0:
+    if stats['total'] == 0:
         await tel_send_message(bot, chat_id, "ℹ️ Статистика пуста. У вас нет добавленных слов.")
         return
-
-    user_progress = progress_df[progress_df['chat_id'] == chat_id]
-    
-    # Merge deck words with user progress
-    merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='left')
-    
-    unseen = merged[merged['last_review_date'].isna()].shape[0]
-    
-    # "learning" words are those with last_interval < 21 days
-    learning = merged[(merged['last_review_date'].notna()) & (merged['last_interval'] < 21)].shape[0]
-    
-    # "learned" words are those with last_interval >= 21
-    learned = merged[(merged['last_review_date'].notna()) & (merged['last_interval'] >= 21)].shape[0]
 
     lines = [
         f"📊 **Ваша статистика ({lang}):**",
         "",
-        f"📚 Всего слов в словаре: *{total_words}*",
-        f"🟦 Новых (неизученных): *{unseen}*",
-        f"🔄 В процессе изучения: *{learning}*",
-        f"🟩 Выучено (интервал ≥21 дн.): *{learned}*",
+        f"📚 Всего слов в словаре: *{stats['total']}*",
+        f"🟦 Новых (неизученных): *{stats['unseen']}*",
+        f"🔄 В процессе изучения: *{stats['learning']}*",
+        f"🟩 Выучено (интервал ≥21 дн.): *{stats['learned']}*",
         "",
         "📖 Для просмотра изученных слов нажмите /words"
     ]
@@ -325,7 +304,7 @@ async def handle_replay(update, context, command):
     
     try:
         word_id = int(command.split('_')[1])
-    except:
+    except Exception:
         return
         
     await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
@@ -337,38 +316,24 @@ async def handle_replay(update, context, command):
         
     await handle_new_exercise(bot, chat_id, exercise)
 
+
 async def handle_words(update, context):
     chat_id = update.message.chat_id
     bot = context._application.bot
     lang = user_config.get_user_data(chat_id)['language']
 
-    progress_df = words_progress_db.get_progress_df()
-    words_df = words_db.get_words_df()
-    deck_words_df = decks_db.get_deck_word_df()
-    user_decks = decks_db.get_user_decks(chat_id, lang)
+    learned_words = lp.get_user_learned_words(chat_id, lang, limit=20)
 
-    deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
-    deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
-
-    user_progress = progress_df[progress_df['chat_id'] == chat_id]
-    merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='inner')
-    
-    # Only show words that have been reviewed at least once
-    reviewed = merged[merged['last_review_date'].notna()].sort_values(by='last_interval', ascending=False)
-
-    if reviewed.shape[0] == 0:
+    if not learned_words:
         await tel_send_message(bot, chat_id, "ℹ️ Вы пока не выучили ни одного слова. Используйте /next_new для начала обучения.")
         return
 
-    top_20 = reviewed.head(20)
-    
     msg_lines = [
         "📖 **Изученные слова (Топ-20 по интервалу повторения):**",
         ""
     ]
-    for idx, row in top_20.iterrows():
-        interval_val = int(row['last_interval']) if pd.notna(row['last_interval']) else 0
-        msg_lines.append(f"• 🇫🇷 **{row['word']}** (интервал: {interval_val} дн.) — /replay_{row['word_id']}")
+    for row in learned_words:
+        msg_lines.append(f"• 🇫🇷 **{row['word']}** (интервал: {row['interval']} дн.) — /replay_{row['word_id']}")
     
     msg_lines.extend([
         "",

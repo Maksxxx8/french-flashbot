@@ -508,3 +508,57 @@ class LearningPlan:
         self.decks_db.save_decks_db()
         print(f'[Buffer] Успешно добавлено {len(generated_items)} новых слов в буфер (колода {custom_deck_id}).')
 
+    def get_user_stats(self, chat_id: int, lang: str) -> dict:
+        progress_df = self.progress_db.get_progress_df()
+        words_df = self.words_db.get_words_df()
+        deck_words_df = self.decks_db.get_deck_word_df()
+        user_decks = self.decks_db.get_user_decks(chat_id, lang)
+
+        deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
+        deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
+
+        total_words = int(deck_words_df.shape[0])
+        if total_words == 0:
+            return {"total": 0, "unseen": 0, "learning": 0, "learned": 0}
+
+        user_progress = progress_df[progress_df['chat_id'] == int(chat_id)]
+        merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='left')
+
+        unseen = int(merged[merged['last_review_date'].isna()].shape[0])
+        learning = int(merged[(merged['last_review_date'].notna()) & (merged['last_interval'] < 21)].shape[0])
+        learned = int(merged[(merged['last_review_date'].notna()) & (merged['last_interval'] >= 21)].shape[0])
+
+        return {
+            "total": total_words,
+            "unseen": unseen,
+            "learning": learning,
+            "learned": learned
+        }
+
+    def get_user_learned_words(self, chat_id: int, lang: str, limit: int = 20) -> list:
+        progress_df = self.progress_db.get_progress_df()
+        words_df = self.words_db.get_words_df()
+        deck_words_df = self.decks_db.get_deck_word_df()
+        user_decks = self.decks_db.get_user_decks(chat_id, lang)
+
+        deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
+        deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
+
+        user_progress = progress_df[progress_df['chat_id'] == int(chat_id)]
+        merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='inner')
+
+        reviewed = merged[merged['last_review_date'].notna()].sort_values(by='last_interval', ascending=False)
+        if reviewed.shape[0] == 0:
+            return []
+
+        top = reviewed.head(limit)
+        results = []
+        for _, row in top.iterrows():
+            interval = int(row['last_interval']) if pd.notna(row['last_interval']) else 0
+            results.append({
+                "word_id": int(row['id']),
+                "word": str(row['word']),
+                "interval": interval
+            })
+        return results
+
