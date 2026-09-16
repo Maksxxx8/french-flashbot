@@ -93,7 +93,7 @@ class WordExamplesSchema(BaseModel):
 class ResponseCorrectionSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
-    translation_score: int = 5
+    translation_score: int = 3
     score_justification: str = ""
     mistakes_explanation: Optional[str] = None
     corrected_translation: str = ""
@@ -104,7 +104,7 @@ class ResponseCorrectionSchema(BaseModel):
         if isinstance(data, dict):
             score = data.get('translation_score')
             if score is None:
-                score = data.get('score', 5)
+                score = data.get('score', 3)
             justification = (data.get('score_justification') or data.get('justification') 
                              or data.get('feedback') or "")
             explanation = (data.get('mistakes_explanation') or data.get('explanation') 
@@ -114,7 +114,7 @@ class ResponseCorrectionSchema(BaseModel):
             try:
                 score_int = int(score)
             except Exception:
-                score_int = 5
+                score_int = 3
             return {
                 'translation_score': score_int,
                 'score_justification': str(justification),
@@ -135,7 +135,7 @@ class FlashCardExampleSchema(BaseModel):
 class FlashcardCorrectionSchema(BaseModel):
     model_config = ConfigDict(extra='ignore')
 
-    translation_score: int = 5
+    translation_score: int = 3
     score_justification: str = ""
 
     @model_validator(mode='before')
@@ -144,13 +144,13 @@ class FlashcardCorrectionSchema(BaseModel):
         if isinstance(data, dict):
             score = data.get('translation_score')
             if score is None:
-                score = data.get('score', 5)
+                score = data.get('score', 3)
             justification = (data.get('score_justification') or data.get('justification') 
                              or data.get('feedback') or data.get('explanation') or "")
             try:
                 score_int = int(score)
             except Exception:
-                score_int = 5
+                score_int = 3
             return {
                 'translation_score': score_int,
                 'score_justification': str(justification),
@@ -320,7 +320,7 @@ class WordsExerciseTest(Exercise):
 
             if clean_user and clean_user == clean_target:
                 assistant_response = ResponseCorrectionSchema(
-                    translation_score=5,
+                    translation_score=3,
                     score_justification="Отлично! Предложение переведено абсолютно точно.",
                     mistakes_explanation=None,
                     corrected_translation=self.correct_answer()
@@ -457,12 +457,12 @@ class FlashcardExercise(Exercise):
 
             if clean_user and clean_user == clean_target:
                 assistant_response = FlashcardCorrectionSchema(
-                    translation_score=5,
+                    translation_score=3,
                     score_justification="Отлично! Абсолютно верный перевод."
                 )
             elif clean_user and bare_target and clean_user == bare_target:
                 assistant_response = FlashcardCorrectionSchema(
-                    translation_score=5,
+                    translation_score=3,
                     score_justification=f"Правильно! Слово верно переведено. Не забывай артикль: {self.word}."
                 )
             else:

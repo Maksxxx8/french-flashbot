@@ -1,12 +1,17 @@
-🇫🇷 **{{word}}** {% if pronunciation %}[{{pronunciation}}]{% endif %}
+🟦 **Новое слово / Карточка**
+
+**{{word}}** {% if pronunciation %}`[{{pronunciation}}]`{% endif %}
+
 {% if translation %}📖 *{{translation}}*
 {% endif %}
-📝 **Примеры из Парижа:**
+
+📝 _Примеры из Парижа:_
 {% for entry in examples %}
-— *{{entry.example_sentence}}*
+— _{{entry.example_sentence}}_
   _{{entry.sentence_translation}}_
 {% endfor %}
+
 {% if conjugations %}
-🔄 **Спряжение (Présent):**
-{{conjugations}}
+⚙️ `Спряжение (Présent):`
+`{{conjugations}}`
 {% endif %}

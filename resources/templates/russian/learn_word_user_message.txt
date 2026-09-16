@@ -1,13 +1,17 @@
-🔍 **Учим слово:** _{{word}}_ {% if pronunciation %}[{{pronunciation}}]{% endif %}
+🟦 **Новое слово / Карточка**
 
-{% if translation %}📖 **Перевод:** *{{translation}}*
+**{{word}}** {% if pronunciation %}`[{{pronunciation}}]`{% endif %}
+
+{% if translation %}📖 *{{translation}}*
 {% endif %}
-📚 **Примеры использования:**
+
+📚 _Примеры использования:_
 {% for entry in examples %}
-- _{{entry.example_sentence}}_ — {{entry.sentence_translation}} {% if entry.pronunciation %}({{entry.pronunciation}}){% endif %}
+— _{{entry.example_sentence}}_
+  _{{entry.sentence_translation}}_
 {% endfor %}
 
 {% if conjugations %}
-🔄 **Склонения в настоящем времени:**
-{{conjugations}}
+⚙️ `Склонения в настоящем времени:`
+`{{conjugations}}`
 {% endif %}

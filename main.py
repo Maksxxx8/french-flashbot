@@ -22,7 +22,7 @@ from utils import get_audio, generate_song_of_the_day
 from words_progress_db import WordsProgressDB
 from user_config import UserConfig
 from words_db import WordsDB
-from words_exercise import FlashcardExercise, WordsExerciseLearn, WordsExerciseTest
+from words_exercise import FlashcardExercise, WordsExerciseLearn, WordsExerciseTest, normalize_french_text
 from running_activities import RunningActivities
 import dotenv
 from tempfile import TemporaryDirectory
@@ -255,11 +255,132 @@ async def handle_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_notifications_on(update, context)
         elif command in ['reset', 'reset_progress']:
             await handle_reset(update, context)
+        elif command == 'stats':
+            await handle_stats(update, context)
+        elif command == 'words':
+            await handle_words(update, context)
+        elif command.startswith('replay_'):
+            await handle_replay(update, context, command)
     except Exception as e:
         if chat_id in running_activities.chat_ids: running_activities.pop_all(chat_id)
         release_all_locks()
         print(e)
         await tel_send_message(bot, chat_id, interface['Something went terribly wrong, please try again or notify the admin'][uilang])
+
+
+
+
+async def handle_stats(update, context):
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    lang = user_config.get_user_data(chat_id)['language']
+    uilang = lang_map[bot.token]
+
+    progress_df = words_progress_db.get_progress_df()
+    words_df = words_db.get_words_df()
+    deck_words_df = decks_db.get_deck_word_df()
+    user_decks = decks_db.get_user_decks(chat_id, lang)
+
+    deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
+    deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
+
+    total_words = deck_words_df.shape[0]
+
+    if total_words == 0:
+        await tel_send_message(bot, chat_id, "ℹ️ Статистика пуста. У вас нет добавленных слов.")
+        return
+
+    user_progress = progress_df[progress_df['chat_id'] == chat_id]
+    
+    # Merge deck words with user progress
+    merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='left')
+    
+    unseen = merged[merged['last_review_date'].isna()].shape[0]
+    
+    # "learning" words are those with last_interval < 21 days
+    learning = merged[(merged['last_review_date'].notna()) & (merged['last_interval'] < 21)].shape[0]
+    
+    # "learned" words are those with last_interval >= 21
+    learned = merged[(merged['last_review_date'].notna()) & (merged['last_interval'] >= 21)].shape[0]
+
+    message = (
+        f"ℹ️ **Ваша статистика ({lang}):**\\n\\n"
+        f"Всего слов в словаре: {total_words}\\n"
+        f"Неизученных слов: {unseen}\\n"
+        f"В процессе изучения: {learning}\\n"
+        f"Выучено (интервал >21д): {learned}\\n\\n"
+        f"Для просмотра выученных слов нажмите /words"
+    )
+
+    await tel_send_message(bot, chat_id, message)
+
+
+
+async def handle_replay(update, context, command):
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    lang = user_config.get_user_data(chat_id)['language']
+    uilang = lang_map[bot.token]
+    
+    try:
+        word_id = int(command.split('_')[1])
+    except:
+        return
+        
+    await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
+    
+    exercise = await lp.get_words_exercise_by_id(chat_id, lang, word_id, mode='learn')
+    if exercise is None:
+        await tel_send_message(bot, chat_id, "Слово не найдено.")
+        return
+        
+    await handle_new_exercise(bot, chat_id, exercise)
+
+async def handle_words(update, context):
+    chat_id = update.message.chat_id
+    bot = context._application.bot
+    lang = user_config.get_user_data(chat_id)['language']
+
+    progress_df = words_progress_db.get_progress_df()
+    words_df = words_db.get_words_df()
+    deck_words_df = decks_db.get_deck_word_df()
+    user_decks = decks_db.get_user_decks(chat_id, lang)
+
+    deck_words_df = pd.merge(words_df, deck_words_df, how='inner', left_on='id', right_on='word_id', sort=False)
+    deck_words_df = deck_words_df[deck_words_df['deck_id'].isin(user_decks)]
+
+    user_progress = progress_df[progress_df['chat_id'] == chat_id]
+    merged = pd.merge(deck_words_df, user_progress, left_on='id', right_on='word_id', how='inner')
+    
+    # Only show words that have been reviewed at least once
+    reviewed = merged[merged['last_review_date'].notna()].sort_values(by='last_interval', ascending=False)
+
+    if reviewed.shape[0] == 0:
+        await tel_send_message(bot, chat_id, "ℹ️ Вы пока не выучили ни одного слова.")
+        return
+
+    # Pagination logic: take top 20
+    top_20 = reviewed.head(20)
+    
+    message = "ℹ️ **Недавно изученные слова (Топ-20):**\n"
+    buttons = []
+    
+    for idx, row in top_20.iterrows():
+        word_text = row['word']
+        message += f"• {word_text} (интервал: {row['last_interval']} дн.)\n"
+        buttons.append(f"Replay_{row['word_id']}")
+    
+    message += "\nНажмите на кнопку ниже, чтобы прослушать слово и пример:"
+    
+    # For Telegram inline keyboards, we map our Replay_ID to callback data.
+    # To keep it simple, we can just send the list, or we send a unified keyboard.
+    # Given the max_len logic in tel_send_message, let's just send the words with /replay_X commands.
+    
+    msg_lines = ["ℹ️ **Изученные слова (Топ-20 по интервалу):**\n"]
+    for idx, row in top_20.iterrows():
+        msg_lines.append(f"• **{row['word']}** (интервал: {row['last_interval']} дн.) — Нажмите /replay_{row['word_id']}")
+        
+    await tel_send_message(bot, chat_id, chr(10).join(msg_lines))
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -482,6 +603,7 @@ async def handle_exercise_button_press(update, context, chat_id, lang, udata, ex
 
                 running_exercise = running_activities.pop_activity(chat_id)
                 running_exercise.hint_clicked = True
+                running_exercise.times_to_write_left = 5
                 running_activities.add_activity(chat_id, running_exercise)
 
                 if not exercise.is_responded:
@@ -491,6 +613,7 @@ async def handle_exercise_button_press(update, context, chat_id, lang, udata, ex
                 message_template = templates.get_template(uilang, lang, 'hint_message')
                 template = jinja2.Template(message_template, undefined=jinja2.StrictUndefined)
                 mes = template.render(word=exercise.word)
+                mes += "\n\n⚠️ Вы подсмотрели подсказку. Напишите правильное слово 5 раз подряд, чтобы продолжить."
                 await tel_send_message(bot, chat_id, mes)
 
             elif f'Correct answer' == udata:
@@ -655,6 +778,25 @@ async def handle_request(update, context):
             exercise = current_activity
             if not exercise.is_responded:
                 
+                if exercise.times_to_write_left > 0:
+                    clean_msg = normalize_french_text(msg)
+                    clean_target = normalize_french_text(exercise.word)
+                    
+                    if clean_msg == clean_target:
+                        exercise.times_to_write_left -= 1
+                        if exercise.times_to_write_left > 0:
+                            await tel_send_message(bot, chat_id, f'Верно! Осталось написать еще {exercise.times_to_write_left} раз(а).')
+                            return
+                        else:
+                            exercise.is_responded = True
+                            lp.process_response(chat_id, exercise, quality=1)
+                            words_progress_db.save_progress()
+                            await tel_send_message(bot, chat_id, "🟩 **Оценка:** *плохо* (вы использовали подсказку)\n\nВы написали слово 5 раз. Можете переходить к следующему.", buttons=['Next'])
+                            return
+                    else:
+                        await tel_send_message(bot, chat_id, f'Неверно. Вы написали "{msg}", а нужно "{exercise.word}". Осталось написать {exercise.times_to_write_left} раз(а).')
+                        return
+
                 exercise.is_responded = True
 
                 await tel_send_message(bot, chat_id, f'{interface["Thinking"][uilang]}...')
@@ -857,6 +999,8 @@ if __name__ == '__main__':
         application.add_handler(CommandHandler("subscribe", handle_command))
         application.add_handler(CommandHandler("reset", handle_command))
         application.add_handler(CommandHandler("reset_progress", handle_command))
+        application.add_handler(CommandHandler("stats", handle_command))
+        application.add_handler(CommandHandler("words", handle_command))
         application.add_handler(CallbackQueryHandler(handle_inline_request))
 
         job_queue = application.job_queue

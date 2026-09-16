@@ -60,6 +60,46 @@ class LearningPlan:
         new_ef = item.e_factor + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
         return max(1.3, new_ef)
     
+    async def get_words_exercise_by_id(self, chat_id: str, lang: str, word_id: int, mode: str='learn') -> Optional[Exercise]:
+            words_df = self.words_db.get_words_df()
+            word_row = words_df[words_df['id'] == word_id]
+            if word_row.shape[0] == 0:
+                return None
+                
+            row_item = word_row.iloc[0]
+            uilang = self.user_config.get_user_ui_lang(chat_id)
+            
+            def _to_scalar(val, default=0):
+                if val is None or pd.isna(val):
+                    return default
+                if hasattr(val, 'item'):
+                    try:
+                        return val.item()
+                    except Exception:
+                        pass
+                return val
+    
+            def _clean_str(val):
+                if val is None or pd.isna(val):
+                    return None
+                s = str(val).strip()
+                if s.lower() == 'nan' or not s:
+                    return None
+                return s
+                
+            meaning = _clean_str(row_item.get('meaning'))
+            translation = _clean_str(row_item.get('translation'))
+            transcription = _clean_str(row_item.get('transcription'))
+            example_sentence = _clean_str(row_item.get('example_sentence'))
+            example_translation = _clean_str(row_item.get('example_translation'))
+            conjugations = _clean_str(row_item.get('conjugations'))
+    
+            return WordsExerciseLearn(row_item['word'], word_id, lang, uilang, self.interface, self.templates,
+                                  meaning=meaning, translation=translation, transcription=transcription,
+                                  example_sentence=example_sentence, example_translation=example_translation,
+                                  conjugations=conjugations,
+                                  audio_path=f'resources/audio/{lang}/{word_id}.mp3', num_reps=0)
+    
     async def get_next_words_exercise(self, chat_id: str, lang: str, mode: Optional[str]=None) -> Optional[Exercise]:
         
         if mode == 'learn' and not self.has_enough_words(chat_id, lang):
@@ -308,12 +348,21 @@ class LearningPlan:
                 # last interval and next review date are already updated
                 return
 
-            if not 0 <= quality <= 5:
-                raise ValueError("Quality must be between 0 and 5")
+            if quality == 1:
+                sm2_quality = 1
+            elif quality == 2:
+                sm2_quality = 3
+            elif quality >= 3:
+                sm2_quality = 5
+            else:
+                sm2_quality = quality  # Fallback
 
-            item.e_factor = self.calculate_e_factor(item, quality)
+            if not 0 <= sm2_quality <= 5:
+                raise ValueError("Mapped quality must be between 0 and 5")
 
-            if quality < 3:
+            item.e_factor = self.calculate_e_factor(item, sm2_quality)
+
+            if sm2_quality < 3:
                 item.num_reps = 1
                 item.last_interval = 0
             else:
