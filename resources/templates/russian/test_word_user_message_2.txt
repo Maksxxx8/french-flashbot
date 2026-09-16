@@ -16,7 +16,7 @@
 {% endif %}
 
 ✅ **Правильный ответ:**  
-**{{corrected_translation}}**
+🇫🇷 **{{corrected_translation}}**
 
 ✳️ _Альтернативный ответ:_  
-_{{original_translation}}_
+🇫🇷 _{{original_translation}}_

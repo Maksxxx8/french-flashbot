@@ -625,7 +625,7 @@ async def handle_exercise_button_press(update, context, chat_id, lang, udata, ex
                     lp.process_correct_answer(chat_id, running_exercise)
                     words_progress_db.save_progress()
 
-                await tel_send_message(bot, chat_id, exercise.correct_answer())
+                await tel_send_message(bot, chat_id, f"🇫🇷 **{exercise.correct_answer()}**")
             # elif f'I know this word' == udata:
             #     lp.set_word_easy(chat_id, exercise.word_id)
             #     words_progress_db.save_progress()

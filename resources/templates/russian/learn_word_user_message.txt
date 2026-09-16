@@ -1,8 +1,8 @@
-🟦 **Новое слово / Карточка**
+🟦 **Новое слово**
 
-**{{word}}** {% if pronunciation %}`[{{pronunciation}}]`{% endif %}
+🇫🇷 **{{word}}** {% if pronunciation %}`[{{pronunciation}}]`{% endif %}
 
-{% if translation %}📖 *{{translation}}*
+{% if translation %}🌐 *{{translation}}*
 {% endif %}
 
 📚 _Примеры использования:_

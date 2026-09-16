@@ -1,5 +1,3 @@
-{% if score == 3 %}🟩{% else %}🟦{% endif %} **Новое слово / Карточка**
-
 {% if score == 3 %}
 🟩 **Оценка:** молодец
 {% elif score == 2 %}
@@ -12,8 +10,8 @@
 
 {% if correct_answer %}
 ✅ **Правильный ответ:**  
-**{{correct_answer}}**
+🇫🇷 **{{correct_answer}}**
 
 {% endif %}
-📖 _Перевод контекста:_ 
+🌐 _Перевод контекста:_ 
 _{{context_translation}}_
