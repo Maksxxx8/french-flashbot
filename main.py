@@ -303,17 +303,18 @@ async def handle_stats(update, context):
     # "learned" words are those with last_interval >= 21
     learned = merged[(merged['last_review_date'].notna()) & (merged['last_interval'] >= 21)].shape[0]
 
-    message = (
-        f"ℹ️ **Ваша статистика ({lang}):**\\n\\n"
-        f"Всего слов в словаре: {total_words}\\n"
-        f"Неизученных слов: {unseen}\\n"
-        f"В процессе изучения: {learning}\\n"
-        f"Выучено (интервал >21д): {learned}\\n\\n"
-        f"Для просмотра выученных слов нажмите /words"
-    )
-
+    lines = [
+        f"📊 **Ваша статистика ({lang}):**",
+        "",
+        f"📚 Всего слов в словаре: *{total_words}*",
+        f"🟦 Новых (неизученных): *{unseen}*",
+        f"🔄 В процессе изучения: *{learning}*",
+        f"🟩 Выучено (интервал ≥21 дн.): *{learned}*",
+        "",
+        "📖 Для просмотра изученных слов нажмите /words"
+    ]
+    message = "\n".join(lines)
     await tel_send_message(bot, chat_id, message)
-
 
 
 async def handle_replay(update, context, command):
@@ -356,31 +357,24 @@ async def handle_words(update, context):
     reviewed = merged[merged['last_review_date'].notna()].sort_values(by='last_interval', ascending=False)
 
     if reviewed.shape[0] == 0:
-        await tel_send_message(bot, chat_id, "ℹ️ Вы пока не выучили ни одного слова.")
+        await tel_send_message(bot, chat_id, "ℹ️ Вы пока не выучили ни одного слова. Используйте /next_new для начала обучения.")
         return
 
-    # Pagination logic: take top 20
     top_20 = reviewed.head(20)
     
-    message = "ℹ️ **Недавно изученные слова (Топ-20):**\n"
-    buttons = []
-    
+    msg_lines = [
+        "📖 **Изученные слова (Топ-20 по интервалу повторения):**",
+        ""
+    ]
     for idx, row in top_20.iterrows():
-        word_text = row['word']
-        message += f"• {word_text} (интервал: {row['last_interval']} дн.)\n"
-        buttons.append(f"Replay_{row['word_id']}")
+        interval_val = int(row['last_interval']) if pd.notna(row['last_interval']) else 0
+        msg_lines.append(f"• 🇫🇷 **{row['word']}** (интервал: {interval_val} дн.) — /replay_{row['word_id']}")
     
-    message += "\nНажмите на кнопку ниже, чтобы прослушать слово и пример:"
-    
-    # For Telegram inline keyboards, we map our Replay_ID to callback data.
-    # To keep it simple, we can just send the list, or we send a unified keyboard.
-    # Given the max_len logic in tel_send_message, let's just send the words with /replay_X commands.
-    
-    msg_lines = ["ℹ️ **Изученные слова (Топ-20 по интервалу):**\n"]
-    for idx, row in top_20.iterrows():
-        msg_lines.append(f"• **{row['word']}** (интервал: {row['last_interval']} дн.) — Нажмите /replay_{row['word_id']}")
-        
-    await tel_send_message(bot, chat_id, chr(10).join(msg_lines))
+    msg_lines.extend([
+        "",
+        "💡 Нажмите /replay_<номер> рядом со словом, чтобы прослушать произношение и карточку."
+    ])
+    await tel_send_message(bot, chat_id, "\n".join(msg_lines))
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -397,6 +391,8 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"📌 *Основные команды:*\n"
         f"• /next_new — Новое слово (с артиклем, транскрипцией, примером и сразу озвучкой)\n"
         f"• /next_test — Проверить выученные слова (тест/флэшкарты)\n"
+        f"• /stats — Статистика изучения и прогресс по словам\n"
+        f"• /words — Список изученных слов с возможностью прослушать карточки\n"
         f"• /add_word — Добавить свое слово для изучения\n"
         f"• /help — Подробная справка по всем командам и кнопкам\n\n"
         f"⚙️ *Уведомления и подписка:*\n"
@@ -409,6 +405,8 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         f"Commands:\n"
         f"• /next_new — Next new word (with audio & examples)\n"
         f"• /next_test — Test learned words\n"
+        f"• /stats — View vocabulary statistics\n"
+        f"• /words — List studied words with replay audio\n"
         f"• /add_word — Add word manually\n"
         f"• /stop — Disable notifications\n"
         f"• /notifications_on — Enable notifications\n"
@@ -437,6 +435,8 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"📌 *КОМАНДЫ БОТА:*\n"
         f"• /next_new — Показать следующее новое слово. Бот присылает карточку с переводом, транскрипцией, контекстным примером и сразу голосовым сообщением с правильным произношением.\n"
         f"• /next_test — Проверить изученные слова. Тестируются только те слова, которые вы уже учили, строго в рамках уровня A1 (без сложной грамматики).\n"
+        f"• /stats — Посмотреть статистику (всего слов, в процессе, выучено).\n"
+        f"• /words — Посмотреть список изученных слов с озвучкой карточек.\n"
         f"• /add_word — Добавить свое слово для изучения (введите слово после команды).\n"
         f"• /stop (или /notifications_off) — Отключить авторассылку по расписанию.\n"
         f"• /notifications_on (или /subscribe) — Включить напоминания по расписанию (09:00, 12:00, 15:00, 19:00, 21:00).\n"
@@ -449,12 +449,12 @@ async def handle_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         f"🔵 *При проверке и тестах (/next_test):*\n"
         f"• *Easier* (Легче) — уменьшить сложность тестовой фразы (сделать предложение короче и проще).\n"
         f"• *Harder* (Сложнее) — увеличить сложность тестовой фразы (в рамках уровня A1).\n"
-        f"• *Hint* (Подсказка) — показать первую букву правильного слова.\n"
+        f"• *Hint* (Подсказка) — показать подсказку (требует написать слово 5 раз для закрепления).\n"
         f"• *Correct answer* (Правильный ответ) — сразу показать правильный ответ с переводом.\n"
         f"• *Answer audio* (Озвучить ответ) — прослушать произношение правильного ответа.\n\n"
         f"━━━━━━━━━━━━━━━━━━━\n"
         f"💡 *Как отвечать в тестах?*\n"
-        f"Просто напишите перевод в чат обычным сообщением. Бот проверит точность перевода, доброжелательно укажет на ошибки и оценит по шкале от 1 до 5!"
+        f"Просто напишите перевод в чат обычным сообщением. Бот оценит ответ словами: *плохо*, *хорошо* (допускается опечатка в 1 букву или артикль) или *молодец*!"
     ) if uilang == 'russian' else (
         f"📖 *BOT GUIDE & COMMANDS*\n\n"
         f"Notifications: *{notif_status}*\n\n"
@@ -911,6 +911,8 @@ async def run_apps(apps):
             await app.bot.set_my_commands([
                 BotCommand("next_new", "Новое слово (с озвучкой)"),
                 BotCommand("next_test", "Тест / повторение выученного"),
+                BotCommand("stats", "Статистика и прогресс"),
+                BotCommand("words", "Список изученных слов"),
                 BotCommand("help", "Справка по командам и кнопкам"),
                 BotCommand("stop", "Отключить уведомления"),
                 BotCommand("notifications_on", "Включить уведомления (5/день)"),
